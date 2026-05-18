@@ -66,8 +66,11 @@ docs/ai/model-test : AI 모델 테스트 결과 문서화
 ✅ 커밋 메시지 예시
 
 [front] feat: 카카오 로그인 버튼 추가
+
 [back] fix: DB 연결 시간 초과 에러 해결
+
 [hw] chore: 핀 번호 설정 변수명 변경
+
 [ai] feat: YOLO 객체 인식 기본 로직 추가
 
 **❌ 나쁜 예시**
