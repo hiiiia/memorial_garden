@@ -1,5 +1,7 @@
 # Memorial_garden
 
+## Github Desktop을 사용하는걸 추천드립니다
+
 # 🚀 [Memorial_garden / 기억정원 프로젝트] 
 
 본 프로젝트는 React, FastAPI, Arduino, Python(AI)을 활용한 [프로젝트 한 줄 설명]입니다.
