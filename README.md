@@ -1,5 +1,3 @@
-# Memorial_garden
-
 ## Github Desktop / SourceTree 을 사용하는걸 추천드립니다
 
 # 🚀 [Memorial_garden / 기억정원 프로젝트] 
