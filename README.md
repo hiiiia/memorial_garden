@@ -1,6 +1,22 @@
 # memorial_garden
 기억정원 프로젝트
 
+# 🚀 [프로젝트 이름] 
+
+본 프로젝트는 React, FastAPI, Arduino, Python(AI)을 활용한 [프로젝트 한 줄 설명]입니다.
+
+## 📂 저장소 구조 (Directory Structure)
+우리 프로젝트는 하나의 저장소 안에서 폴더로 파트를 구분하는 **모노레포(Monorepo)** 방식을 사용합니다.
+본인이 담당하는 파트의 폴더 안에서만 코드를 작성해 주세요!
+
+```text
+📁 root
+ ├── 📁 frontend   # React.js (웹 프론트엔드)
+ ├── 📁 backend    # FastAPI (API 서버)
+ ├── 📁 arduino    # C++ (하드웨어 제어)
+ └── 📁 ai         # Python, Jupyter (데이터 분석 및 모델링)
+
+
 ## 🤝 Git 협업 가이드 (팀원 필독!)
 
 코드 작업 전 반드시 아래의 규칙을 확인해 주세요. 
