@@ -27,6 +27,8 @@ services:
       - ./shared_uploads:/app/uploads
     ports:
       - "8001:8001"
+    env_file:
+      - .env
     networks:
       - platform-network
 

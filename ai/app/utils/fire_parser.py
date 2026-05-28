@@ -53,4 +53,4 @@ async def prepare_audio_file(file_url: str) -> str:
     # 예외 처리: 알 수 없는 포맷
     # ---------------------------------------------------------
     else:
-        raise ValueError(f"지원하지 않는 파일 URL 스킴입니다: {file_url}")
+        raise ValueError(f"지원하지 않는 파일 URL입니다: {file_url}")

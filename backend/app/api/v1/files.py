@@ -11,7 +11,7 @@ import uuid
 from core.config import settings
 from core.storage import save_file_and_get_url
 from core.response import unified_response
-from db.database import get_db
+from db.database import get_db, SessionLocal
 from db import models
 
 router = APIRouter()
@@ -92,27 +92,44 @@ async def upload_audio(
 class AnalysisJobRequest(BaseModel):
     user_id: str
     device_id: str
-    data_type: str
     file_url: str
-    recorded_at: str
     job_id: str
 
-
-# AI 분석 서버로 작업을 비동기 인계하는 내부 함수
+# AI 서버로 분석 요청하는 비동기 함수
 async def forward_to_ai_server(payload: dict):
+    ai_target_url = f"{settings.AI_PROXY_URL}/api/v1/analyze"
+    #callback_url = f"http://backend:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
+    callback_url = f"http://localhost:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
+
     async with httpx.AsyncClient() as client:
         try:
+            print(f"[Backend] AI 서버로 분석 요청 송신 중... (Job ID: {payload['job_id']})")
+            
             response = await client.post(
-                f"{settings.AI_PROXY_URL}/api/v1/analyze", 
-                json={
-                    "file_url": payload["file_url"],
-                    "callback_url": f"http://backend:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
-                },
+                ai_target_url,
+                json={"job_id": payload["job_id"], "user_id": payload["user_id"], "file_path": payload["file_url"], "callback_url": callback_url},
+                headers={"Authorization": f"Bearer {settings.AI_SECRET_TOKEN}", "Content-Type": "application/json"},
                 timeout=10.0
             )
-            print(f"[AI 인계 완료] Status: {response.status_code}, Job ID: {payload['job_id']}")
+            response.raise_for_status()
+            print(f"[AI 인계 성공] Status: {response.status_code}, Job ID: {payload['job_id']}")
+            
         except Exception as e:
+            # 🚨 에러 발생 시: 허공에 응답하는 대신 DB 상태를 'FAILED'로 업데이트!
             print(f"[AI 인계 실패] 에러 발생: {str(e)}")
+            
+            # 백그라운드 전용 독립적인 DB 세션을 엽니다.
+            db = SessionLocal()
+            try:
+                log_record = db.query(models.Log).filter(models.Log.id == payload['job_id']).first()
+                if log_record:
+                    log_record.status = "FAILED"  # 프론트엔드가 나중에 확인할 수 있도록 상태 변경
+                    db.commit()
+            except Exception as db_e:
+                print(f"[DB 롤백 오류] 상태 업데이트 실패: {str(db_e)}")
+                db.rollback()
+            finally:
+                db.close() # 작업이 끝나면 반드시 세션을 닫아줍니다.
 
 
 @router.post("/analysis/jobs", status_code=status.HTTP_202_ACCEPTED)
