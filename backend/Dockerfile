@@ -12,4 +12,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
 
 # --reload 옵션을 추가하여 코드 수정 시 자동 재시작
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+
+
+
+
+
+
+
+### docker-compose down   
+### docker-compose up --build -d
+### docker-compose logs -f backend
+### docker-compose restart backend

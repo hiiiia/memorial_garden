@@ -9,6 +9,11 @@ docker-compose up -d
 # 백엔드 컨테이너 내부 쉘 접속
 docker exec -it <컨테이너ID> /bin/bash
 
+## 백엔드 서버 로그 확인 (매우 중요 ⭐️)
+# DB 컨테이너가 잘 떴는지, 백엔드가 DB와 성공적으로 연결되었는지 실시간 로그를 확인합니다.
+docker-compose logs -f backend
+
+
 # 컨테이너 안에서 패키지 추가 설치
 pip install requests
 

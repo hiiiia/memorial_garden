@@ -1,0 +1,13 @@
+# 과거의 시간선(local)을 다시 쓰는 작업
+git filter-branch --force --index-filter "git rm --cached --ignore-unmatch .env" --prune-empty --tag-name-filter cat -- --all
+
+# 깃허브(Origin)의 역사도 강제로 덮어쓰기
+git push origin --force --all
+
+# (refs/original/refs/...)이 붙은 가지 > git이 지우고 혹시나 해서 남긴 데이터
+## 제거 방법
+git for-each-ref --format="%(refname)" refs/original/ | xargs -n 1 git update-ref -d
+
+
+#reflog: 삭제된 평행우주의 블랙박스까지 열어서 100% 복구
+#filter-branch: 과거 역사 전체를 훑어서 특정 흔적만 소각
