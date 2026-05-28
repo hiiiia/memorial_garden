@@ -1,42 +1,47 @@
 version: '3.8'
 
 services:
-  # 백엔드 개발 환경
+  # 1. 백엔드 개발 환경
   backend:
     build:
       context: ./backend
     volumes:
-      - ./backend/app:/app/app  # 로컬 소스 변경 시 컨테이너에 즉시 반영
+      - ./backend/app:/app
+      - ./shared_uploads:/app/uploads
     ports:
       - "8000:8000"
+    env_file:
+      - .env  # 백엔드도 .env를 읽어서 DB에 접속합니다.
     environment:
-      - AI_PROXY_URL=http://ai_proxy:8001
+      - AI_PROXY_URL=http://ai:8001
+
     networks:
       - platform-network
 
-  # AI 중계 서버 개발 환경
+  # 2. AI 중계 서버 개발 환경 (이하 기존과 동일)
   ai:
     build:
       context: ./ai
     volumes:
       - ./ai/app:/app/app
+      - ./shared_uploads:/app/uploads
     ports:
       - "8001:8001"
     networks:
       - platform-network
 
-  # 프론트엔드 개발 환경
+  # 3. 프론트엔드 개발 환경
   frontend:
     image: node:18-alpine
     working_dir: /app
     volumes:
       - ./frontend:/app
-      - /app/node_modules  # (컨테이너 내부 격리)
+      - /app/node_modules
     ports:
-      - "3000:3000"  # Nginx 대신 개발 서버(npm start) 포트 사용
+      - "3000:3000"
     command: sh -c "npm install && npm start"
-    stdin_open: true  # (표준 입력 열어두기) // 개발용
-    tty: true         # (가상 터미널 할당) // 개발용
+    stdin_open: true
+    tty: true
     networks:
       - platform-network
 
