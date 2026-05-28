@@ -24,3 +24,4 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 ### docker-compose down   
 ### docker-compose up --build -d
 ### docker-compose logs -f backend
+### docker-compose restart backend
