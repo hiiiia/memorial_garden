@@ -44,7 +44,9 @@ class Log(Base):
     status = Column(String(20), default="PROCESSING", nullable=False)
     
     # String(1000) -> Text 로 변경 (길이 제한 해제)
-    stt_text = Column(Text, nullable=True)         
+    stt_text = Column(Text, nullable=True)      
+    reply_text = Column(Text, nullable=True)   
+    reply_audio_url = Column(String(500), nullable=True) # TTS 연동 시 사용
     risk_score = Column(Float, default=0.0, nullable=False)
     primary_emotion = Column(String(20), nullable=True)    
     # LLM 요약도 혹시 길어질 수 있으니 Text로 넉넉하게 잡습니다.

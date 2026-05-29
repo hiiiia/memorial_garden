@@ -32,6 +32,9 @@ async def upload_audio(
     audio_file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    
+    new_job_id = uuid.uuid4().hex
+    
     # 1. 검증 로직
     # 인증 실패 응답 (401 일괄 적용)
     if not credentials or credentials.scheme != "Bearer" or credentials.credentials != settings.API_SECRET_TOKEN:
@@ -61,6 +64,7 @@ async def upload_audio(
     # 4. DB 저장
     try:
         new_log = models.Log(
+            id=new_job_id,
             dependent_id=user_id,
             file_url=real_file_url,
             status="PROCESSING"
@@ -79,7 +83,10 @@ async def upload_audio(
     return unified_response(
         status_code=status.HTTP_201_CREATED,
         message="File uploaded successful.",
-        data={"file_url": real_file_url}
+        data={
+            "file_url": real_file_url,
+            "job_id" : new_job_id
+        }
     )
 
 
@@ -99,7 +106,7 @@ class AnalysisJobRequest(BaseModel):
 async def forward_to_ai_server(payload: dict):
     ai_target_url = f"{settings.AI_PROXY_URL}/api/v1/analyze"
     #callback_url = f"http://backend:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
-    callback_url = f"http://localhost:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
+    callback_url = f"http://backend:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
 
     async with httpx.AsyncClient() as client:
         try:
