@@ -21,6 +21,7 @@ class Settings:
     # AI 중계 서버 주소 불러오기 ⭐️
     AI_PROXY_URL: str = os.getenv("AI_PROXY_URL", "http://ai:8001")
 
+    
 
     # JWT 보안 설정 (이후 로그인 구현 시 사용)
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-for-dev")
@@ -32,6 +33,7 @@ class Settings:
     
     API_SECRET_TOKEN: str = os.getenv("API_SECRET_TOKEN","default-token")
     AI_SECRET_TOKEN: str = os.getenv("AI_SECRET_TOKEN", "default-token")
+    OPENAI_API_KEY : str = os.getenv("OPENAI_API_KEY", "default-token")
 
 # 인스턴스화하여 다른 파일에서 쉽게 임포트하도록 함
 settings = Settings()
