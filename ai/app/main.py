@@ -88,13 +88,15 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             
             
             prompt = """
-            이 음성 파일(WAV)을 분석하여 사용자의 자해/위험 징후 및 심리 상태를 평가해주세요.
+            이 음성 파일(WAV)을 분석하여 사용자의 자해/위험 징후 및 심리 상태를 평가하고,
+            사용자가 한 말에 대해, 20대 딸의 밝고 애교 있는 말투로 답변을 작성해주세요.
             반드시 지정된 JSON 포맷으로만 응답해야 하며, 어떠한 마크다운 태그나 설명도 포함하지 마세요.
             
             {
               "risk_score": 0.0에서 1.0 사이의 실수 (위험도가 높고 비극적인 징후일수록 1.0에 가까움),
               "primary_emotion": "happy", "sad", "angry", "anxious", "neutral" 중 하나를 영어 소문자로 선택,
-              "llm_summary": "한 줄로 작성된 한국어 심리 상태 요약문"
+              "llm_summary": "한 줄로 작성된 한국어 심리 상태 요약문",
+              "reply_text": "피보호자의 말에 공감하고 다정하게 위로를 건네는 대화형 답변 (예: '모셔다 드리지 못해서 속상하네요 ㅠ 오늘 어디를 다녀오셨어요?')"
             }
             """
             
@@ -177,7 +179,8 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 "analysis_data": {
                     "risk_score": float(analysis_result.get("risk_score", 0.0)),
                     "primary_emotion": analysis_result.get("primary_emotion", "neutral"),
-                    "llm_summary": analysis_result.get("llm_summary", "")
+                    "llm_summary": analysis_result.get("llm_summary", ""),
+                    "reply_text": analysis_result.get("reply_text", "제가 항상 곁에서 듣고 있어요. 조금 더 쉬시는 건 어떨까요?") # 방어 코드
                 }
             }
             
@@ -188,7 +191,7 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 print(f"[AI] 백엔드 응답 상태코드: {res.status_code}")
                 res.raise_for_status() 
             
-            # 여기까지 무사히 오면 루프 탈출!
+            # 루프 탈출
             break 
 
         except Exception as e:
