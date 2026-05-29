@@ -8,7 +8,7 @@ from db.database import get_db
 
 router = APIRouter()
 
-@router.get("/health")
+@router.get("")
 async def health_check(db: Session = Depends(get_db)):
     try:
         # DB가 살아있는지 가장 가벼운 쿼리(SELECT 1)로 핑(Ping) 테스트
