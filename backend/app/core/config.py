@@ -31,6 +31,7 @@ class Settings:
     SAFE_PASSWORD = quote_plus(DB_PASSWORD)
     
     API_SECRET_TOKEN: str = os.getenv("API_SECRET_TOKEN","default-token")
+    AI_SECRET_TOKEN: str = os.getenv("AI_SECRET_TOKEN", "default-token")
 
 # 인스턴스화하여 다른 파일에서 쉽게 임포트하도록 함
 settings = Settings()

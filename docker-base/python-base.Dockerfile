@@ -1,5 +1,5 @@
 # 공통 Python 3.7 슬림 이미지
-FROM python:3.7-slim
+FROM python:3.9-slim
 
 # 개발에 필요한 최소 도구 및 하드웨어 라이브러리 미리 설치
 RUN apt-get update && apt-get install -y \
