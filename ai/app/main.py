@@ -95,6 +95,7 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             {
               "risk_score": 0.0에서 1.0 사이의 실수 (위험도가 높고 비극적인 징후일수록 1.0에 가까움),
               "primary_emotion": "happy", "sad", "angry", "anxious", "neutral" 중 하나를 영어 소문자로 선택,
+              "stt_text" : "사용자가 한 말을 텍스트로 변환"
               "llm_summary": "한 줄로 작성된 한국어 심리 상태 요약문",
               "reply_text": "피보호자의 말에 공감하고 다정하게 위로를 건네는 대화형 답변 (예: '모셔다 드리지 못해서 속상하네요 ㅠ 오늘 어디를 다녀오셨어요?')"
             }
@@ -102,76 +103,78 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             
             print("[AI] Gemini 분석 요청 중...")
             
-            # 2. 분석 요청
-            response = client.models.generate_content(
-                model='gemini-flash-latest',
-                contents=[audio_file, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-                ## 2026/05/29v.
-                # ai-1  | [AI] === 내 API 키로 사용 가능한 모델 목록 ===
-                # ai-1  |  - models/gemini-2.5-flash
-                # ai-1  |  - models/gemini-2.5-pro
-                # ai-1  |  - models/gemini-2.0-flash
-                # ai-1  |  - models/gemini-2.0-flash-001
-                # ai-1  |  - models/gemini-2.0-flash-lite-001
-                # ai-1  |  - models/gemini-2.0-flash-lite
-                # ai-1  |  - models/gemini-2.5-flash-preview-tts
-                # ai-1  |  - models/gemini-2.5-pro-preview-tts
-                # ai-1  |  - models/gemma-4-26b-a4b-it
-                # ai-1  |  - models/gemma-4-31b-it
-                # ai-1  |  - models/gemini-flash-latest
-                # ai-1  |  - models/gemini-flash-lite-latest
-                # ai-1  |  - models/gemini-pro-latest
-                # ai-1  |  - models/gemini-2.5-flash-lite
-                # ai-1  |  - models/gemini-2.5-flash-image
-                # ai-1  |  - models/gemini-3-pro-preview
-                # ai-1  |  - models/gemini-3-flash-preview
-                # ai-1  |  - models/gemini-3.1-pro-preview
-                # ai-1  |  - models/gemini-3.1-pro-preview-customtools
-                # ai-1  |  - models/gemini-3.1-flash-lite-preview
-                # ai-1  |  - models/gemini-3.1-flash-lite
-                # ai-1  |  - models/gemini-3-pro-image-preview
-                # ai-1  |  - models/gemini-3-pro-image
-                # ai-1  |  - models/nano-banana-pro-preview
-                # ai-1  |  - models/gemini-3.1-flash-image-preview
-                # ai-1  |  - models/gemini-3.1-flash-image
-                # ai-1  |  - models/gemini-3.5-flash
-                # ai-1  |  - models/lyria-3-clip-preview
-                # ai-1  |  - models/lyria-3-pro-preview
-                # ai-1  |  - models/gemini-3.1-flash-tts-preview
-                # ai-1  |  - models/gemini-robotics-er-1.5-preview
-                # ai-1  |  - models/gemini-robotics-er-1.6-preview
-                # ai-1  |  - models/gemini-2.5-computer-use-preview-10-2025
-                # ai-1  |  - models/antigravity-preview-05-2026
-                # ai-1  |  - models/deep-research-max-preview-04-2026
-                # ai-1  |  - models/deep-research-preview-04-2026
-                # ai-1  |  - models/deep-research-pro-preview-12-2025
-                # ai-1  |  - models/gemini-embedding-001
-                # ai-1  |  - models/gemini-embedding-2-preview
-                # ai-1  |  - models/gemini-embedding-2
-                # ai-1  |  - models/aqa
-                # ai-1  |  - models/imagen-4.0-generate-001
-                # ai-1  |  - models/imagen-4.0-ultra-generate-001
-                # ai-1  |  - models/imagen-4.0-fast-generate-001
-                # ai-1  |  - models/veo-2.0-generate-001
-                # ai-1  |  - models/veo-3.0-generate-001
-                # ai-1  |  - models/veo-3.0-fast-generate-001
-                # ai-1  |  - models/veo-3.1-generate-preview
-                # ai-1  |  - models/veo-3.1-fast-generate-preview
-                # ai-1  |  - models/veo-3.1-lite-generate-preview
-                # ai-1  |  - models/gemini-2.5-flash-native-audio-latest
-                # ai-1  |  - models/gemini-2.5-flash-native-audio-preview-09-2025
-                # ai-1  |  - models/gemini-2.5-flash-native-audio-preview-12-2025
-                # ai-1  |  - models/gemini-3.1-flash-live-preview
-                # ai-1  | =============================================
+            # # 2. 분석 요청
+            # response = client.models.generate_content(
+            #     #model='gemini-flash-latest',
+            #     model = 'gemini-3-flash-preview',
+            #     contents=[audio_file, prompt],
+            #     config=types.GenerateContentConfig(
+            #         response_mime_type="application/json"
+            #     )
+            # )
+            #     ## 2026/05/29v.
+            #     # ai-1  | [AI] === 내 API 키로 사용 가능한 모델 목록 ===
+            #     # ai-1  |  - models/gemini-2.5-flash
+            #     # ai-1  |  - models/gemini-2.5-pro
+            #     # ai-1  |  - models/gemini-2.0-flash
+            #     # ai-1  |  - models/gemini-2.0-flash-001
+            #     # ai-1  |  - models/gemini-2.0-flash-lite-001
+            #     # ai-1  |  - models/gemini-2.0-flash-lite
+            #     # ai-1  |  - models/gemini-2.5-flash-preview-tts
+            #     # ai-1  |  - models/gemini-2.5-pro-preview-tts
+            #     # ai-1  |  - models/gemma-4-26b-a4b-it
+            #     # ai-1  |  - models/gemma-4-31b-it
+            #     # ai-1  |  - models/gemini-flash-latest
+            #     # ai-1  |  - models/gemini-flash-lite-latest
+            #     # ai-1  |  - models/gemini-pro-latest
+            #     # ai-1  |  - models/gemini-2.5-flash-lite
+            #     # ai-1  |  - models/gemini-2.5-flash-image
+            #     # ai-1  |  - models/gemini-3-pro-preview
+            #     # ai-1  |  - models/gemini-3-flash-preview
+            #     # ai-1  |  - models/gemini-3.1-pro-preview
+            #     # ai-1  |  - models/gemini-3.1-pro-preview-customtools
+            #     # ai-1  |  - models/gemini-3.1-flash-lite-preview
+            #     # ai-1  |  - models/gemini-3.1-flash-lite
+            #     # ai-1  |  - models/gemini-3-pro-image-preview
+            #     # ai-1  |  - models/gemini-3-pro-image
+            #     # ai-1  |  - models/nano-banana-pro-preview
+            #     # ai-1  |  - models/gemini-3.1-flash-image-preview
+            #     # ai-1  |  - models/gemini-3.1-flash-image
+            #     # ai-1  |  - models/gemini-3.5-flash
+            #     # ai-1  |  - models/lyria-3-clip-preview
+            #     # ai-1  |  - models/lyria-3-pro-preview
+            #     # ai-1  |  - models/gemini-3.1-flash-tts-preview
+            #     # ai-1  |  - models/gemini-robotics-er-1.5-preview
+            #     # ai-1  |  - models/gemini-robotics-er-1.6-preview
+            #     # ai-1  |  - models/gemini-2.5-computer-use-preview-10-2025
+            #     # ai-1  |  - models/antigravity-preview-05-2026
+            #     # ai-1  |  - models/deep-research-max-preview-04-2026
+            #     # ai-1  |  - models/deep-research-preview-04-2026
+            #     # ai-1  |  - models/deep-research-pro-preview-12-2025
+            #     # ai-1  |  - models/gemini-embedding-001
+            #     # ai-1  |  - models/gemini-embedding-2-preview
+            #     # ai-1  |  - models/gemini-embedding-2
+            #     # ai-1  |  - models/aqa
+            #     # ai-1  |  - models/imagen-4.0-generate-001
+            #     # ai-1  |  - models/imagen-4.0-ultra-generate-001
+            #     # ai-1  |  - models/imagen-4.0-fast-generate-001
+            #     # ai-1  |  - models/veo-2.0-generate-001
+            #     # ai-1  |  - models/veo-3.0-generate-001
+            #     # ai-1  |  - models/veo-3.0-fast-generate-001
+            #     # ai-1  |  - models/veo-3.1-generate-preview
+            #     # ai-1  |  - models/veo-3.1-fast-generate-preview
+            #     # ai-1  |  - models/veo-3.1-lite-generate-preview
+            #     # ai-1  |  - models/gemini-2.5-flash-native-audio-latest
+            #     # ai-1  |  - models/gemini-2.5-flash-native-audio-preview-09-2025
+            #     # ai-1  |  - models/gemini-2.5-flash-native-audio-preview-12-2025
+            #     # ai-1  |  - models/gemini-3.1-flash-live-preview
+            #     # ai-1  | =============================================
                 
                 
-            analysis_result = json.loads(response.text)
-            print(f"[AI] Gemini 분석 완료: {analysis_result}")
+            # analysis_result = json.loads(response.text)
+            # print(f"[AI] Gemini 분석 완료: {analysis_result}")
             
+            analysis_result = {}
             # 3. 성공 콜백 데이터 준비
             callback_body = {
                 "user_id": user_id,
@@ -180,6 +183,7 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                     "risk_score": float(analysis_result.get("risk_score", 0.0)),
                     "primary_emotion": analysis_result.get("primary_emotion", "neutral"),
                     "llm_summary": analysis_result.get("llm_summary", ""),
+                    "stt_text" : analysis_result.get("stt_text", ""),
                     "reply_text": analysis_result.get("reply_text", "제가 항상 곁에서 듣고 있어요. 조금 더 쉬시는 건 어떨까요?") # 방어 코드
                 }
             }
