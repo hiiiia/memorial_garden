@@ -50,6 +50,24 @@ def verify_api_token(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Unauthorized. Invalid token.")
     return token
 
+# FAILED 콜백 코드
+async def send_failed_callback(callback_url: str, user_id: str, headers: dict):
+    error_callback_body = {
+        "user_id": user_id,
+        "status": "FAILED",
+        "analysis_data": {
+            "risk_score": 0.0,
+            "primary_emotion": "neutral",
+            "llm_summary": "서버 과부하 또는 AI 통신 에러로 분석을 완료하지 못했습니다."
+        }
+    }
+    try:
+        async with httpx.AsyncClient() as http_client:
+            print(f"\n[AI Error Handler] 백엔드로 FAILED 콜백 전송 중...")
+            res = await http_client.post(callback_url, json=error_callback_body, headers=headers)
+            print(f"[AI Error Handler] FAILED 콜백 전송 완료. 상태코드: {res.status_code}")
+    except Exception as callback_err:
+        print(f"[AI Fatal Error] 백엔드로 FAILED 콜백마저 실패: {str(callback_err)}")
 
 
 # ==========================================
@@ -68,24 +86,33 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
         "Authorization": f"Bearer {settings.AI_SECRET_TOKEN}"
     }
 
-    # 모델 리스트 출력 코드
-    # print("\n[AI] === 내 API 키로 사용 가능한 모델 목록 ===")
-    # try:
-    #     for m in client.models.list():
-    #         print(f" - {m.name}")
-    # except Exception as list_err:
-    #     print(f"[AI] 모델 목록 불러오기 실패: {list_err}")
-    # print("=============================================\n")
-
-
+    analysis_result = None
+    print(f"\n[AI] === Gemini 분석 작업 시작===")
+    print(f"[AI] 오디오 업로드 시작: {file_path}")
+    
+    try:
+        # 1. 파일 업로드
+        audio_file = client.files.upload(file=file_path)
+    except Exception as upload_err:
+        print(f"[AI Fatal Error] 파일 업로드 자체 실패: {upload_err}")
+        await send_failed_callback(callback_url, user_id, headers)
+        return
+    
+    # ---------------------------------------------------------
+    # [Phase 1] Gemini 분석 (재시도 로직 독립)
+    # ---------------------------------------------------------
     for attempt in range(1, max_retries + 1):
         try:
-            print(f"\n[AI] === 분석 작업 시작 (시도: {attempt}/{max_retries}) ===")
-            print(f"[AI] Gemini 오디오 업로드 시작: {file_path}")
+            print(f"\n[AI] === 분석 시도 횟수 : {attempt}/{max_retries}) ===")
             
-            # 1. 파일 업로드
-            audio_file = client.files.upload(file=file_path)
-            
+            # 모델 리스트 출력 코드
+            # print("\n[AI] === 내 API 키로 사용 가능한 모델 목록 ===")
+            # try:
+            #     for m in client.models.list():
+            #         print(f" - {m.name}")
+            # except Exception as list_err:
+            #     print(f"[AI] 모델 목록 불러오기 실패: {list_err}")
+            # print("=============================================\n")
             
             prompt = """
             이 음성 파일(WAV)을 분석하여 사용자의 자해/위험 징후 및 심리 상태를 평가하고,
@@ -175,65 +202,60 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             # print(f"[AI] Gemini 분석 완료: {analysis_result}")
             
             
-            ########################## 디버깅용 ########################
-            ########## 실 테스트시 analysis_result = {} 주석처리 / # 2. 분석 요청 주석 해체  ##########
-            analysis_result = {}
-             ########################## 디버깅용 ########################
-            
-            # 3. 성공 콜백 데이터 준비
-            callback_body = {
-                "user_id": user_id,
-                "status": "COMPLETED",
-                "analysis_data": {
-                    "risk_score": float(analysis_result.get("risk_score", 0.0)),
-                    "primary_emotion": analysis_result.get("primary_emotion", "neutral"),
-                    "llm_summary": analysis_result.get("llm_summary", ""),
-                    "stt_text" : analysis_result.get("stt_text", ""),
-                    "reply_text": analysis_result.get("reply_text", "제가 항상 곁에서 듣고 있어요. 조금 더 쉬시는 건 어떨까요?") # 방어 코드
-                }
-            }
-            
-            # 4. 성공 콜백 전송
-            async with httpx.AsyncClient() as http_client:
-                print(f"[AI] 백엔드로 성공(COMPLETED) 콜백 송신 중... 목적지: {callback_url}")
-                res = await http_client.post(callback_url, json=callback_body, headers=headers)
-                print(f"[AI] 백엔드 응답 상태코드: {res.status_code}")
-                res.raise_for_status() 
-            
-            # 루프 탈출
-            break 
+            analysis_result = { }
+            # -----------------------------------------------------
+
+            print("[AI] ✅ Gemini 분석 성공!")
+            break  # 분석 성공 시 Phase 1 루프 탈출
 
         except Exception as e:
-            print(f"[AI Warning] 작업 실패: {str(e)}")
-            
+            print(f"[AI Warning] Gemini 분석 실패: {str(e)}")
             if attempt < max_retries:
                 wait_time = base_delay * attempt
-                print(f"[AI Retry] {wait_time}초 후 다시 시도합니다...\n")
+                print(f"[AI Retry] {wait_time}초 후 분석을 다시 시도합니다...\n")
                 await asyncio.sleep(wait_time)
-            
     else:
-        print(f"\n[AI Critical Error] 최대 재시도 횟수({max_retries}회) 초과. 백엔드로 FAILED 콜백을 전송합니다.")
-        
-        # 5. 실패 콜백 데이터 준비
-        error_callback_body = {
-            "user_id": user_id,
-            "status": "FAILED",
-            "analysis_data": {
-                "risk_score": 0.0,
-                "primary_emotion": "neutral",
-                "llm_summary": "서버 과부하 또는 AI 통신 에러로 분석을 완료하지 못했습니다."
-            }
+        # break 없이 루프가 끝났다면 (최대 재시도 실패)
+        print(f"\n[AI Critical Error] Gemini 분석 최대 재시도({max_retries}회) 초과.")
+        await send_failed_callback(callback_url, user_id, headers)
+        return # 분석에 실패했으므로 여기서 완전히 종료합니다.
+
+
+    # ---------------------------------------------------------
+    # [Phase 2] 백엔드 콜백 전송 (재시도 로직 독립)
+    # Phase 1을 무사히 통과한 경우에만 실행됩니다.
+    # ---------------------------------------------------------
+    callback_body = {
+        "user_id": user_id,
+        "status": "COMPLETED",
+        "analysis_data": {
+            "risk_score": float(analysis_result.get("risk_score", 0.0)),
+            "primary_emotion": analysis_result.get("primary_emotion", "neutral"),
+            "llm_summary": analysis_result.get("llm_summary", ""),
+            "stt_text" : analysis_result.get("stt_text", ""),
+            "reply_text": analysis_result.get("reply_text", "제가 항상 곁에서 듣고 있어요. 조금 더 쉬시는 건 어떨까요?")
         }
-        
-        # 6. 실패 콜백 전송
+    }
+
+    for attempt in range(1, max_retries + 1):
         try:
+            print(f"\n[AI] 백엔드로 COMPLETED 콜백 송신 중... (시도: {attempt}/{max_retries})")
             async with httpx.AsyncClient() as http_client:
-                print(f"Backend Callback URL : {callback_url}\n")
-                res = await http_client.post(callback_url, json=error_callback_body, headers=headers)
-                print(f"[AI] FAILED 콜백 전송 완료. 백엔드 상태코드: {res.status_code}")
-        except Exception as callback_err:
-            # 실패 콜백마저 전송에 실패했을때
-            print(f"[AI Fatal Error] 백엔드로 FAILED 콜백 실패: {str(callback_err)}")
+                res = await http_client.post(callback_url, json=callback_body, headers=headers)
+                res.raise_for_status() 
+                print(f"[AI] ✅ 백엔드 전송 완료! 상태코드: {res.status_code}")
+            
+            break # 전송 성공 시 Phase 2 루프 탈출
+
+        except Exception as e:
+            print(f"[AI Warning] 백엔드 콜백 전송 실패: {str(e)}")
+            if attempt < max_retries:
+                print(f"[AI Retry] {base_delay}초 후 다시 콜백 송신을 시도합니다...\n")
+                await asyncio.sleep(base_delay)
+    else:
+        # 백엔드 전송 최대 재시도 실패
+        print(f"\n[AI Fatal Error] 백엔드 콜백 전송 실패. 데이터가 유실되었습니다.")
+
 
 @app.get("/")
 def read_root():
