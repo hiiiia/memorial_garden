@@ -13,7 +13,7 @@ import edge_tts
 from db.database import get_db 
 from db import models
 from core.config import settings
-
+from api.v1.utils.notifier import send_emergency_alert
 
 
 router = APIRouter()
@@ -24,6 +24,7 @@ class AnalysisData(BaseModel):
     primary_emotion: str
     llm_summary: str
     reply_text: str
+    stt_text : str
 
 class CallbackRequest(BaseModel):
     user_id: str
@@ -129,10 +130,13 @@ async def receive_ai_callback(
         raise HTTPException(status_code=404, detail="Job ID not found")
     
     if payload.status == "COMPLETED":
+        
+        
         print(f"[Backend] 위험도: {payload.analysis_data.risk_score}")
         print(f"[Backend] 주 감정: {payload.analysis_data.primary_emotion}")
         print(f"[Backend] AI 요약: {payload.analysis_data.llm_summary}")
         print(f"[Backend] 💬 AI 답변: {payload.analysis_data.reply_text}")
+        print(f"[Backend] 💬 STT: {payload.analysis_data.stt_text}")
         
         # 2. DB 업데이트 (성공 상태 및 분석 데이터 매핑)
         log_record.status = "COMPLETED"
@@ -162,5 +166,22 @@ async def receive_ai_callback(
         db.rollback()
         print(f"[Backend Error] DB 커밋 중 에러 발생: {e}")
         raise HTTPException(status_code=500, detail="Database commit failed")
+    
+    
+    DANGER_THRESHOLD = 0.0
+        
+    if payload.analysis_data.risk_score >= DANGER_THRESHOLD:
+        # 백그라운드로 알림
+        target_name = log_record.dependent.name if log_record.dependent else "알 수 없는 사용자"
+        await send_emergency_alert(
+            risk_score=payload.analysis_data.risk_score,
+            summary=payload.analysis_data.llm_summary,
+            text=payload.analysis_data.stt_text, # (원래는 STT 텍스트 원본이 들어가야 좋습니다)
+            
+            dependent_name = target_name, # 어르신
+            guardian_phone = log_record.dependent.guardian.phone, # 보호자 전화번호 (알림톡 발송용)
+            guardian_name = log_record.dependent.guardian.name # 보호
+        )
+    
     
     return {"message": "Callback processed successfully", "job_id": job_id}

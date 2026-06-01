@@ -34,6 +34,12 @@ class Settings:
     API_SECRET_TOKEN: str = os.getenv("API_SECRET_TOKEN","default-token")
     AI_SECRET_TOKEN: str = os.getenv("AI_SECRET_TOKEN", "default-token")
     OPENAI_API_KEY : str = os.getenv("OPENAI_API_KEY", "default-token")
+    
+    SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "default-token")
+
+    SLACK_CHANNEL = os.getenv("SLACK_CHANNEL", "default-token")
+    SLACK_TOKEN = os.getenv("SLACK_TOKEN","default-token")
+
 
 # 인스턴스화하여 다른 파일에서 쉽게 임포트하도록 함
 settings = Settings()

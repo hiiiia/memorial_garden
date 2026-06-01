@@ -15,3 +15,6 @@ api_router.include_router(health.router,prefix="/health", tags=["System"])
 
 # 3. 콜백 관련 라우터 (/api/v1/callbacks/jobs/...)
 api_router.include_router(jobs.router, prefix="/callbacks/jobs", tags=["Callbacks"])
+
+# 4. 긴급 알림 관련 라우터 (/api/v1/utils/...)
+api_router.include_router(jobs.router, prefix="/alert", tags=["alert"])
