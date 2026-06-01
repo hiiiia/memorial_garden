@@ -4,3 +4,6 @@ sqlalchemy
 pymysql
 httpx
 python-multipart
+aiofiles
+#openAPI 쓰면 edge-tts는 주석
+edge-tts
