@@ -174,7 +174,12 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             # analysis_result = json.loads(response.text)
             # print(f"[AI] Gemini 분석 완료: {analysis_result}")
             
+            
+            ########################## 디버깅용 ########################
+            ########## 실 테스트시 analysis_result = {} 주석처리 / # 2. 분석 요청 주석 해체  ##########
             analysis_result = {}
+             ########################## 디버깅용 ########################
+            
             # 3. 성공 콜백 데이터 준비
             callback_body = {
                 "user_id": user_id,
