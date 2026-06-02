@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import os
 import httpx
 import aiofiles
+import asyncio
 from datetime import datetime
 
 # openAPI TTS 사용시 edge-tts는 주석처리
@@ -13,7 +14,7 @@ import edge_tts
 from db.database import get_db 
 from db import models
 from core.config import settings
-from api.v1.utils.notifier import send_emergency_alert
+from api.v1.utils.notifier import send_emergency_alert, send_kakao_alert
 
 
 router = APIRouter()
@@ -168,20 +169,34 @@ async def receive_ai_callback(
         raise HTTPException(status_code=500, detail="Database commit failed")
     
     
-    DANGER_THRESHOLD = 0.0
+    DANGER_THRESHOLD = 0.0 # 테스트용이므로 0.0 유지
         
     if payload.analysis_data.risk_score >= DANGER_THRESHOLD:
-        # 백그라운드로 알림
         target_name = log_record.dependent.name if log_record.dependent else "알 수 없는 사용자"
-        await send_emergency_alert(
-            risk_score=payload.analysis_data.risk_score,
-            summary=payload.analysis_data.llm_summary,
-            text=payload.analysis_data.stt_text, # (원래는 STT 텍스트 원본이 들어가야 좋습니다)
+        guardian_obj = log_record.dependent.guardian if log_record.dependent else None
+        
+        # 보호자 정보가 있을 때만 알림 발송 진행
+        if guardian_obj:
+            print(f"[Alert] 위험 감지! {guardian_obj.name} 보호자에게 알림을 발송합니다.")
             
-            dependent_name = target_name, # 어르신
-            guardian_phone = log_record.dependent.guardian.phone, # 보호자 전화번호 (알림톡 발송용)
-            guardian_name = log_record.dependent.guardian.name # 보호
-        )
-    
+            # 🌟 슬랙 알림과 카카오톡 알림을 동시에(병렬로) 실행하여 지연 시간을 줄입니다.
+            await asyncio.gather(
+                send_emergency_alert(
+                    risk_score=payload.analysis_data.risk_score,
+                    summary=payload.analysis_data.llm_summary,
+                    text=payload.analysis_data.stt_text,
+                    dependent_name=target_name,
+                    guardian_phone=guardian_obj.phone,
+                    guardian_name=guardian_obj.name
+                ),
+                send_kakao_alert(
+                    guardian=guardian_obj, # DB에서 찾은 보호자 객체 통째로 전달
+                    dependent_name=target_name,
+                    risk_score=payload.analysis_data.risk_score,
+                    summary=payload.analysis_data.llm_summary
+                )
+            )
+        else:
+            print("[Alert Warning] 매칭된 보호자 정보가 없어 알림을 보낼 수 없습니다.")
     
     return {"message": "Callback processed successfully", "job_id": job_id}
