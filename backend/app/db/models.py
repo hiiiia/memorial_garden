@@ -13,6 +13,7 @@ class Guardian(Base):
 
     # default=generate_uuid 추가
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
+    username = Column(String(50), unique=True, index=True)
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     name = Column(String(50), nullable=False)
