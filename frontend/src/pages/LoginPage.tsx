@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-
+import { config } from '../config'; // config 객체 불러오기
 const LoginPage = () => {
   // 🌟 TypeScript: state가 무조건 문자열(string)임을 명시합니다.
   const [username, setUsername] = useState<string>('');
@@ -16,7 +16,7 @@ const LoginPage = () => {
     formData.append('password', password);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/login', {
+      const response = await fetch(`${config.apiBaseUrl}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -44,8 +44,8 @@ const LoginPage = () => {
   };
 
   const handleKakaoLogin = () => {
-    const KAKAO_CLIENT_ID = "여기에_카카오_REST_API_KEY_입력"; 
-    const REDIRECT_URI = "http://localhost:3000/auth/kakao/callback";
+    const KAKAO_CLIENT_ID = config.kakaoClientId; 
+    const REDIRECT_URI = `${config.frontendUrl}/auth/kakao/callback`;
     const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${KAKAO_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code`;
     
     window.location.href = KAKAO_AUTH_URL;
