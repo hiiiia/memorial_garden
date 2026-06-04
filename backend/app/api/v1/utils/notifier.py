@@ -6,7 +6,7 @@ import json
 from core.config import settings
 from db.models import Guardian
 
-from api.v1.utils.crypto import decrypt_token # 복호화 함수
+from api.v1.utils.security import decrypt_token # 복호화 함수
 
 
 SLACK_CHANNEL= settings.SLACK_CHANNEL
