@@ -44,7 +44,11 @@ const App = () => {
             } 
           />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/auth/kakao/callback" element={<KakaoCallbackPage />} />
+          <Route 
+            path="/auth/kakao/callback" 
+            element={<KakaoCallbackPage setIsLoggedIn={setIsLoggedIn} />} 
+          />
+          
           <Route path="/signup/extra" element={<ExtraSignupPage />} />
         </Routes>
       </div>

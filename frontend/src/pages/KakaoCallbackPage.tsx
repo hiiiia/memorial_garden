@@ -3,7 +3,13 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { config } from '../config'; // config 객체 불러오기
 
-const KakaoCallbackPage = () => {
+
+//  App.tsx에서 넘겨준 리모컨(Prop)의 타입을 정의합니다.
+interface KakaoCallbackProps {
+  setIsLoggedIn: (value: boolean) => void;
+}
+
+const KakaoCallbackPage = ({ setIsLoggedIn }: KakaoCallbackProps) => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
@@ -27,10 +33,10 @@ const KakaoCallbackPage = () => {
           },
           body: JSON.stringify({
             code: code,
-            redirect_uri: `${config.frontendUrl}auth/kakao/callback`, // 카카오 디벨로퍼스에 등록한 주소와 동일해야 합니다.
+            redirect_uri: `${config.frontendUrl}/auth/kakao/callback`, // 카카오 디벨로퍼스에 등록한 주소와 동일해야 합니다.
           }),
         });
-
+        console.log(`${config.frontendUrl}/auth/kakao/callback`);
         const data = await response.json();
 
         if (response.ok) {
@@ -42,13 +48,16 @@ const KakaoCallbackPage = () => {
           } else {
             // 기존 유저라면 바로 로그인 처리
             localStorage.setItem('access_token', data.access_token);
+            // App.tsx의 상태를 '로그인 됨'으로 바꿔줍니다!
+              setIsLoggedIn(true);
             alert('카카오로 로그인되었습니다!');
-            navigate('/'); // 메인 화면으로 이동
+            navigate('/', { replace: true }); // 메인 화면으로 이동
           }
           } else {
             //  [추가된 방어 로직 1] 백엔드에서 400, 500 에러를 던졌을 때
             const errorData = await response.json().catch(() => ({})); // JSON 파싱 실패 대비
-            alert(`로그인 처리 실패: ${errorData.detail || '서버 오류가 발생했습니다.'}`);
+            const errorMsg = errorData.error || errorData.message || errorData.detail || '서버 오류가 발생했습니다.';
+            alert(`로그인 처리 실패: ${errorMsg}`);
             navigate('/login', { replace: true }); // 뒤로가기 방지하며 로그인 페이지로 돌려보냄
           }
         } catch (error) {
