@@ -38,11 +38,33 @@ const App = () => {
       <Header isLoggedIn={isLoggedIn} onLogout={handleLogout} />
       <div style={{ padding: '20px' }}>
         <Routes>
+<<<<<<< HEAD
+          <Route 
+            path="/" 
+            element={
+              isLoggedIn ? (
+                <div style={{ textAlign: 'center', marginTop: '50px' }}>
+                  <h2>환영합니다! 🎉</h2>
+                  <p>성공적으로 로그인되었습니다.</p>
+                </div>
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            } 
+          />
+          <Route path="/login" element={<LoginPage />} />
+          <Route 
+            path="/auth/kakao/callback" 
+            element={<KakaoCallbackPage setIsLoggedIn={setIsLoggedIn} />} 
+          />
+          
+=======
           <Route path="/"  element={isLoggedIn ? (<MainPage />) : (<Navigate to="/login" replace /> )}  />
 
           <Route path="/login" element={isLoggedIn ? <Navigate to="/" replace /> : <LoginPage setIsLoggedIn={setIsLoggedIn} />} />
 
           <Route path="/auth/kakao/callback" element={<KakaoCallbackPage setIsLoggedIn={setIsLoggedIn}  />} />
+>>>>>>> 5704f87 (fix(frontend): 카카오 로그인 유저 정보 저장 누락 및 TS 라우팅 에러 수정)
           <Route path="/signup/extra" element={<ExtraSignupPage />} />
         </Routes>
       </div>

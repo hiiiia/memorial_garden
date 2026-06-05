@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { config } from '../config'; // config 객체 불러오기
 
+<<<<<<< HEAD
 
 //  App.tsx에서 넘겨준 리모컨(Prop)의 타입을 정의합니다.
 interface KakaoCallbackProps {
@@ -10,6 +11,15 @@ interface KakaoCallbackProps {
 }
 
 const KakaoCallbackPage = ({ setIsLoggedIn }: KakaoCallbackProps) => {
+=======
+// (App.tsx에서 받아온 리모컨)
+interface LoginPageProps {
+  setIsLoggedIn: (value: boolean) => void;
+}
+
+
+const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
+>>>>>>> 5704f87 (fix(frontend): 카카오 로그인 유저 정보 저장 누락 및 TS 라우팅 에러 수정)
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
@@ -43,13 +53,18 @@ const KakaoCallbackPage = ({ setIsLoggedIn }: KakaoCallbackProps) => {
           // 상태 코드가 200(기존 유저) 또는 202(신규 유저)일 때의 로직
           if (response.status === 202) {
             alert('카카오 인증 성공! 사용할 아이디를 설정해 주세요.');
-            // TODO: 신규 유저용 추가 회원가입(아이디/비번 설정) 페이지로 이동
+            // 신규 유저용 추가 회원가입(아이디/비번 설정) 페이지로 이동
             navigate('/signup/extra', { state: { kakaoData: data } });
           } else {
             // 기존 유저라면 바로 로그인 처리
-            localStorage.setItem('access_token', data.access_token);
-            // App.tsx의 상태를 '로그인 됨'으로 바꿔줍니다!
-              setIsLoggedIn(true);
+
+            // 토큰 저장
+            const token = data.data?.access_token || data.access_token;
+            const guardianInfo = data.data?.guardian || data.guardian; 
+            if (token) localStorage.setItem('access_token', token);
+            if (guardianInfo) localStorage.setItem('guardian_info', JSON.stringify(guardianInfo));
+
+            setIsLoggedIn(true);
             alert('카카오로 로그인되었습니다!');
             navigate('/', { replace: true }); // 메인 화면으로 이동
           }
