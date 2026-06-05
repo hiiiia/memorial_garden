@@ -2,7 +2,13 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-const KakaoCallbackPage = () => {
+// (App.tsx에서 받아온 리모컨)
+interface LoginPageProps {
+  setIsLoggedIn: (value: boolean) => void;
+}
+
+
+const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
@@ -36,13 +42,20 @@ const KakaoCallbackPage = () => {
           // 상태 코드가 200(기존 유저) 또는 202(신규 유저)일 때의 로직
           if (response.status === 202) {
             alert('카카오 인증 성공! 사용할 아이디를 설정해 주세요.');
-            // TODO: 신규 유저용 추가 회원가입(아이디/비번 설정) 페이지로 이동
+            // 신규 유저용 추가 회원가입(아이디/비번 설정) 페이지로 이동
             navigate('/signup/extra', { state: { kakaoData: data } });
           } else {
             // 기존 유저라면 바로 로그인 처리
-            localStorage.setItem('access_token', data.access_token);
+
+            // 토큰 저장
+            const token = data.data?.access_token || data.access_token;
+            const guardianInfo = data.data?.guardian || data.guardian; 
+            if (token) localStorage.setItem('access_token', token);
+            if (guardianInfo) localStorage.setItem('guardian_info', JSON.stringify(guardianInfo));
+
+            setIsLoggedIn(true);
             alert('카카오로 로그인되었습니다!');
-            navigate('/'); // 메인 화면으로 이동
+            navigate('/', { replace: true }); // 메인 화면으로 이동
           }
         } else {
           alert(`로그인 실패: ${data.error}`);

@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { config } from '../config'; // config 객체 불러오기
-const LoginPage = () => {
-  // 🌟 TypeScript: state가 무조건 문자열(string)임을 명시합니다.
+
+// (App.tsx에서 받아온 리모컨)
+interface LoginPageProps {
+  setIsLoggedIn: (value: boolean) => void;
+}
+
+
+const LoginPage = ({ setIsLoggedIn }: LoginPageProps) => {
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
 
-  // 🌟 TypeScript: e(이벤트)가 HTML 폼 전송 이벤트임을 명시합니다.
+  const navigate = useNavigate();
+
+
   const handleNormalLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg('');
@@ -24,17 +33,21 @@ const LoginPage = () => {
         body: formData, // URLSearchParams 객체는 브라우저가 알아서 변환해 줍니다.
       });
 
-      // 백엔드에서 통일한 unified_response 규격에 맞게 데이터가 들어옵니다.
       const data = await response.json();
 
       if (response.ok) {
         // 성공 시 토큰과 유저 정보 저장
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('guardian_info', JSON.stringify(data.guardian));
+const token = data.data?.access_token || data.access_token;
+        const guardianInfo = data.data?.guardian || data.guardian;
+        
+        // 2. 안전하게 저장
+        if (token) localStorage.setItem('access_token', token);
+        if (guardianInfo) localStorage.setItem('guardian_info', JSON.stringify(guardianInfo));
+        // 로그인 됨(true)으로 변경
+        setIsLoggedIn(true);
 
-        alert(`환영합니다, ${data.guardian.name}님!`);
-        // TODO: 메인 페이지 리다이렉트
-        // window.location.href = '/'; 
+
+        navigate('/', { replace: true });
       } else {
         setErrorMsg(data.error || '로그인에 실패했습니다.');
       }
@@ -57,7 +70,7 @@ const LoginPage = () => {
       
       {errorMsg && <p style={{ color: 'red', fontWeight: 'bold' }}>{errorMsg}</p>}
 
-      {/* 🌟 폼 전송 시 handleNormalLogin 함수가 실행됩니다. */}
+      {/* 폼 전송 시 handleNormalLogin 함수가 실행됩니다. */}
       <form onSubmit={handleNormalLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         <div>
           <label>아이디</label><br />
