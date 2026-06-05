@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import httpx
 from datetime import timedelta
 from pydantic import BaseModel
+import uuid
 
 from db.database import get_db
 from db.models import Guardian
@@ -36,7 +37,14 @@ class SignupRequest(BaseModel):
     password: str
     name: str
     phone: str
-
+# 카카오 회원가입 데이터 
+class KakaoSignupRequest(BaseModel):
+    kakao_id: str
+    username: str
+    email: str = None
+    name: str = "Kakao-Default"
+    kakao_access_token: str = None
+    kakao_refresh_token: str = None
 @router.post("/login")
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -93,7 +101,8 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         email=request.email,
         hashed_password=hashed_pw, # 평문 비밀번호가 아닌 해시값 저장
         name=request.name,
-        phone=request.phone
+        phone=request.phone,
+        
     )
 
     # 4. DB에 저장하고 확정(commit)
@@ -154,6 +163,8 @@ async def kakao_login(request: KakaoLoginRequest, db: Session = Depends(get_db))
         
     kakao_email = user_json.get("kakao_account", {}).get("email")
     
+    kakao_id = user_json.get("id")
+    
     # 3. 우리 DB에서 해당 이메일을 가진 보호자 찾기
     guardian = db.query(Guardian).filter(Guardian.email == kakao_email).first()
     
@@ -165,6 +176,7 @@ async def kakao_login(request: KakaoLoginRequest, db: Session = Depends(get_db))
             data={
                 "is_new_user": True,
                 "kakao_email": kakao_email,
+                "kakao_id": str(kakao_id),
                 "temp_kakao_access_token": encrypt_token(access_token), 
                 "temp_kakao_refresh_token": encrypt_token(refresh_token) if refresh_token else None
             }
@@ -253,5 +265,53 @@ async def link_kakao(
             "is_kakao_linked": True
         }
     )
+
+@router.post("/kakao/signup", status_code=status.HTTP_201_CREATED)
+def kakao_signup(user_data: KakaoSignupRequest, db: Session = Depends(get_db)):
+    # 1. 아이디 중복 검사
+    if db.query(Guardian).filter(Guardian.username == user_data.username).first():
+        
+        return unified_response(
+            status_code=400,
+            message="이미 사용 중인 아이디입니다."
+        )
+    # 2. 카카오 ID 중복 검사
+    if db.query(Guardian).filter(Guardian.kakao_id == user_data.kakao_id).first():
+        return unified_response(
+            status_code=400,
+            message="이미 가입된 카카오 계정입니다."
+        )
+
+    # 3. 필수 컬럼(nullable=False) 더미 데이터 생성
+    # Password > 무작위 해쉬값으로 생성
+    # 카카오 이메일이 없으면 kakao_고유번호@dummy.com 형태로 생성
+    # 카카오 전화번호 기본값 세팅
     
+    safe_email = user_data.email if user_data.email else f"kakao_{user_data.kakao_id}@dummy.com"
+    safe_password = f"kakao_dummy_{uuid.uuid4().hex}"
+    safe_phone = "000-0000-0000" 
+
+    # 4. 새 유저 객체 생성 및 저장
+    new_user = Guardian(
+        username=user_data.username,
+        email=safe_email,
+        name=user_data.name,
+        kakao_id=user_data.kakao_id,
+        hashed_password=safe_password,
+        phone=safe_phone,
+        kakao_access_token=user_data.kakao_access_token,
+        kakao_refresh_token=user_data.kakao_refresh_token
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return unified_response(
+            status_code=400,
+            message="카카오 회원가입이 완료되었습니다.",
+            data={
+              "name": new_user.name  
+            }
+        )
 #https://kauth.kakao.com/oauth/authorize?client_id=6289718b437796b5e1ed53469a6ac748&redirect_uri=http://localhost:8000/api/v1/auth/kakao/callback&response_type=code

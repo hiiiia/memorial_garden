@@ -19,6 +19,9 @@ class Guardian(Base):
     name = Column(String(50), nullable=False)
     phone = Column(String(20), nullable=False)
     
+    # 카카오 유저 고유 식별자 컬럼 추가 (일반 가입 유저를 위해 nullable=True)
+    kakao_id = Column(String(50), unique=True, index=True, nullable=True)
+    
     # 카카오 메시지 전송을 위한 토큰 저장 컬럼
     kakao_access_token = Column(String(255), nullable=True)
     kakao_refresh_token = Column(String(255), nullable=True)
