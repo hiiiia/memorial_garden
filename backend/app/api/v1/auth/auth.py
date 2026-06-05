@@ -166,7 +166,7 @@ async def kakao_login(request: KakaoLoginRequest, db: Session = Depends(get_db))
     kakao_id = user_json.get("id")
     
     # 3. 우리 DB에서 해당 이메일을 가진 보호자 찾기
-    guardian = db.query(Guardian).filter(Guardian.email == kakao_email).first()
+    guardian = db.query(Guardian).filter(Guardian.kakao_id == str(kakao_id)).first()
     
     # 시나리오 A: 신규 유저 (아이디 생성 페이지로 유도)
     if not guardian:
