@@ -18,6 +18,30 @@ app = FastAPI(
     version=settings.PROJECT_VERSION
 )
 
+
+# CORS 미들웨어 설정 (반드시 app.include_router 보다 위에 작성)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",   # 로컬 React 환경 허용
+        "http://172.18.0.2:3000"   # 도커 내부 네트워크 IP도 혹시 모르니 허용
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],           # GET, POST, PUT, DELETE 등 모든 행동 허용
+    allow_headers=["*"],           # 모든 헤더 데이터 허용
+)
+
+
+# API 통신(요청) 중 발생하는 DB 연결 에러 방어 (Global Exception Handler)
+@app.exception_handler(OperationalError)
+async def db_operational_error_handler(request: Request, exc: OperationalError):
+    print(f"🚨 데이터베이스 연결 오류 발생: {exc}") # 서버 콘솔용 로그
+    return unified_response(
+        status_code=503, # 503 Service Unavailable
+        message="데이터베이스 서버와 연결할 수 없습니다. (Timeout)",
+        data={"detail": str(exc)}
+    )
+
 # WAV 음성 공유 마운트 폴더 생성
 os.makedirs("shared_uploads", exist_ok=True)
 app.mount("/static", StaticFiles(directory="shared_uploads"), name="static")
