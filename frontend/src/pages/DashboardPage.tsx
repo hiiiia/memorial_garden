@@ -5,10 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import '../css/CustomCalendar.css';
-import '../css/DashboardPage.css'; // 
+import '../css/DashboardPage.css'; 
 import '../css/MainPage.css';
 
-import { config } from '../config'; // API 주소 세팅
 // --- 인터페이스 정의 ---
 interface DashboardData {
   guardian_name: string;
@@ -22,7 +21,7 @@ interface DashboardData {
 interface DiaryData { id: number; date: string; imageUrl: string; content: string; keywords: string[]; }
 interface HealthData { id: number; date: string; depressionScore: number; dementiaScore: number; insight: string; }
 
-// --- 가상 데이터 (추후 백엔드 API로 교체) ---
+// 하단 달력용 임시 데이터
 const mockDiaryData: DiaryData[] = [
   { id: 1, date: "2026-06-05", imageUrl: "https://images.unsplash.com/photo-1490730141103-6cac27aaab94?auto=format&fit=crop&w=800&q=80", content: "오늘은 어린 시절 동네 어귀에서 친구들과 뛰놀던 기억을 떠올리셨어요...", keywords: ["어린시절", "골목길", "그리움"] },
 ];
@@ -33,105 +32,50 @@ const mockHealthData: HealthData[] = [
 const DashboardPage = () => {
   const navigate = useNavigate();
   
-  // 1. 대시보드 상태 관리
+  // 상태 관리
   const [dashData, setDashData] = useState<DashboardData | null>(null);
+  const [pendingSenior, setPendingSenior] = useState<{ name: string } | null>(null); // 🌟 대기 중인 어르신 정보
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>('');
 
-  // 2. 하단 달력/탭 상태 관리
   const [activeTab, setActiveTab] = useState<'diary' | 'report'>('diary');
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date(2026, 5, 5)); // 2026년 6월 5일 기준 (임시)
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date(2026, 5, 5)); 
 
-  // API 데이터 호출
+  // 데이터 호출 (Mock 데이터 활용)
   useEffect(() => {
-    const fetchDashboard = async () => {
-      try {
-        const token = localStorage.getItem('access_token');
-        const guardianInfoStr = localStorage.getItem('guardian_info');
-        
-        if (!token || !guardianInfoStr) {
-          setError('로그인이 필요합니다.');
-          setIsLoading(false);
-          return;
-        }
+    // UI 테스트용 스위치 (아래 3개 중 하나로 변경해보세요)
+    // 'none': 아무것도 없는 빈 화면
+    // 'pending': 수락 대기 중 화면
+    // 'linked': 연동 완료된 정상 대시보드
+    var testStatus: 'none' | 'pending' | 'linked' = 'pending'; 
 
-        const guardianInfo = JSON.parse(guardianInfoStr);
-        const guardianId = guardianInfo.id;
-        const targetUserId = 'USER_ABC'; 
-        const currentDate = new Date().toISOString();
-
-        // const response = await fetch(
-        //   `${config.apiBaseUrl}/guardian/${guardianId}/dashboard?user_id=${targetUserId}&date=${currentDate}`,
-        //   {
-        //     method: 'GET',
-        //     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-        //   }
-        // );
-
-        
-        // // =================================================================
-        // 🚨 원래 있던 fetch 로직을 잠시 주석 처리하거나 지웁니다.
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-
-        // =================================================================
-
-        // 1. 임시 데이터를 객체로 만듭니다.
-        const dummyData = {
+    setTimeout(() => {
+      if (testStatus === 'linked') {
+        setDashData({
           guardian_name: "가족", 
-          senior: { name: "김영희", status: "연동 중" },
-          today_condition: { 
-            state: "good", 
-            label: "안정", 
-            description: "특이사항이 없습니다.", 
-            color_code: "#388E3C" 
-          },
-          risk_assessment: { 
-            score: 32, 
-            level: "낮음", 
-            status_text: "안정적인 상태입니다." 
-          },
-          last_interaction: { 
-            time_label: "오늘 오전 9:12", 
-            duration_label: "AI와 15분 대화" 
-          },
+          senior: { name: "김영희", status: "연동 중" }, 
+          today_condition: { state: "good", label: "안정", description: "특이사항이 없습니다.", color_code: "#388E3C" },
+          risk_assessment: { score: 32, level: "낮음", status_text: "안정적인 상태입니다." },
+          last_interaction: { time_label: "오늘 오전 9:12", duration_label: "AI와 15분 대화" },
           recent_alerts: [
             { id: 1, content: "오늘 일기가 공유되었습니다.", time_ago: "오전 9:15", type: "info" },
             { id: 2, content: "위험도 변동이 없습니다.", time_ago: "어제", type: "success" },
             { id: 3, content: "도움 요청이 없습니다.", time_ago: "어제", type: "success" }
           ]
-        };
-
-        // 2. .json() 변환 과정 없이 곧바로 State에 집어넣습니다!
-        setDashData(dummyData);
-        setIsLoading(false);
-
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
-        
-
-        // const result = await response.json();
-        // if (response.ok && result.code === 200) {
-        //   setDashData(result.data);
-        // } else {
-        //   setError(result.error || '데이터를 불러오지 못했습니다.');
-        // }
-      } catch (err) {
-        setError('서버와의 통신에 실패했습니다.');
-      } finally {
-        setIsLoading(false);
+        });
+        setPendingSenior(null);
+      } else if (testStatus === 'pending') {
+        // 연동 요청은 보냈지만 아직 수락하지 않은 상태
+        setDashData(null);
+        setPendingSenior({ name: "김영희" });
+      } else {
+        // 아예 연동을 시도조차 안 한 상태
+        setDashData(null); 
+        setPendingSenior(null);
       }
-    };
-    fetchDashboard();
+      setIsLoading(false);
+    }, 500); 
   }, []);
 
-  // 날짜 변환 및 데이터 필터링
   const formatYYYYMMDD = (date: Date) => {
     const offset = date.getTimezoneOffset() * 60000;
     return new Date(date.getTime() - offset).toISOString().split('T')[0];
@@ -141,29 +85,75 @@ const DashboardPage = () => {
   const filteredDiary = mockDiaryData.find(d => d.date === selectedDateStr);
   const filteredHealth = mockHealthData.find(d => d.date === selectedDateStr);
 
-  const getAlertIcon = (type: string) => type === 'warning' ? '🔴' : type === 'info' ? '🟡' : '🟢';
   const getConditionIcon = (state: string) => state === 'good' ? '🙂' : state === 'bad' ? '😥' : '😐';
 
+  // 로딩 화면
   if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>대시보드를 준비 중입니다...</div>;
-  if (error || !dashData) return <div style={{ padding: '50px', textAlign: 'center', color: '#E57373' }}>{error}</div>;
 
+  // 1. 수락 대기 중 화면 (Pending State)
+  if (pendingSenior) {
+    return (
+      <div className="dashboard-container" style={{ padding: '100px 20px', textAlign: 'center' }}>
+        <div style={{ fontSize: '50px', marginBottom: '20px' }}>⏳</div>
+        <h2 style={{ color: '#333', marginBottom: '15px' }}>연동 수락 대기 중</h2>
+        <div style={{ backgroundColor: '#FFF', border: '1px solid #EAE5D9', borderRadius: '12px', padding: '20px', maxWidth: '400px', margin: '0 auto 30px auto', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+          <p style={{ color: '#4A4A4A', fontSize: '16px', margin: 0, lineHeight: '1.6' }}>
+            <strong style={{ color: '#1B873F' }}>{pendingSenior.name} 어르신</strong> 연동 요청 진행중...<br/>
+            어르신이 앱에서 수락하시면<br/>
+            실시간 대시보드가 활성화됩니다.
+          </p>
+        </div>
+        <button
+          onClick={() => alert('요청을 취소하시겠습니까? (기능 연결 필요)')}
+          style={{ backgroundColor: '#FFF', color: '#888', border: '1px solid #CCC', padding: '10px 20px', borderRadius: '8px', fontSize: '14px', cursor: 'pointer', transition: '0.2s' }}
+        >
+          요청 취소하기
+        </button>
+      </div>
+    );
+  }
+
+  //  2. 아예 아무도 연동되지 않은 빈 화면 (Empty State)
+  if (!dashData) {
+    return (
+      <div className="dashboard-container" style={{ padding: '100px 20px', textAlign: 'center' }}>
+        <div style={{ fontSize: '50px', marginBottom: '20px' }}>🔗</div>
+        <h2 style={{ color: '#333', marginBottom: '10px' }}>아직 연동된 어르신이 없습니다.</h2>
+        <p style={{ color: '#888', marginBottom: '30px' }}>어르신 계정을 연동하고 실시간 상태를 확인해보세요.</p>
+        <button
+          onClick={() => navigate('/register-senior')}
+          style={{ backgroundColor: '#7A8B5F', color: '#FFF', border: 'none', padding: '14px 28px', borderRadius: '12px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}
+        >
+          어르신 연동하기
+        </button>
+      </div>
+    );
+  }
+
+  // 3. 연동이 완료된 정상 대시보드 화면 (Linked State)
   return (
     <div className="dashboard-container" style={{ paddingBottom: '80px' }}>
       <div className="dashboard-content">
         
-        {/* =========================================
-            SECTION 1: 실시간 대시보드 요약 (기존 DashboardPage 영역)
-            ========================================= */}
-        <header className="dashboard-header">
+        {/* 헤더 및 추가 연동 버튼 */}
+        <header className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
           <div className="header-left">
             <h1 className="header-title">안녕하세요, {dashData.guardian_name}님!</h1>
             <p className="header-subtitle">연동된 가족의 실시간 상태를 확인하세요.</p>
           </div>
-          <div className="header-profile">
-            <div className="profile-avatar">👵🏻</div>
-            <div className="profile-info">
-              <p className="profile-name">{dashData.senior.name}님</p>
-              <p className="profile-status">{dashData.senior.status}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <button 
+              onClick={() => navigate('/register-senior')}
+              style={{ backgroundColor: '#FFF', color: '#7A8B5F', border: '1px solid #7A8B5F', padding: '6px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              + 연동 추가
+            </button>
+            <div className="header-profile">
+              <div className="profile-avatar" style={{ fontSize: '20px' }}>👵🏻</div>
+              <div className="profile-info">
+                <p className="profile-name">{dashData.senior.name}님</p>
+                <p className="profile-status" style={{ color: '#7A8B5F', fontWeight: 'bold' }}>{dashData.senior.status}</p>
+              </div>
             </div>
           </div>
         </header>
@@ -191,9 +181,7 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        {/* =========================================
-            SECTION 2: 과거 기록 달력 및 상세 탭 (기존 MainPage 영역)
-            ========================================= */}
+        {/* 하단 달력 영역 */}
         <div style={{ marginTop: '50px', marginBottom: '20px', borderTop: '2px dashed #EAE5D9', paddingTop: '40px' }}>
           <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>지난 기록 찾아보기</h2>
           <p style={{ fontSize: '14px', color: '#888', marginBottom: '30px' }}>날짜를 선택하여 과거의 그림일기와 건강 지표를 확인해보세요.</p>

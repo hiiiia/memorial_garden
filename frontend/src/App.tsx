@@ -13,6 +13,7 @@ import MainPage from './pages/MainPage';
 import DashboardPage from './pages/DashboardPage';
 import DiaryPage from './pages/DiaryPage';
 import RiskAnalysisPage from './pages/RiskAnalysisPage';
+import SeniorRegisterPage from './pages/SeniorRegisterPage';
 
 import Header from './components/Header';
 
@@ -58,6 +59,7 @@ const App = () => {
           {/*<Route path="/dashboard" element={<DashboardPage />} />*/}
           <Route path="/diary" element={<DiaryPage />} />
           <Route path="/analysis" element={<RiskAnalysisPage />} />
+          <Route path="/register-senior" element={isLoggedIn ? <SeniorRegisterPage /> : <Navigate to="/login" replace />}  />
           
         </Routes>
       </div>
