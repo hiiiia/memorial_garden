@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import httpx
 import os
 import json
+import asyncio
 
 from google import genai
 from google.genai import types
@@ -13,13 +14,12 @@ import asyncio
 app = FastAPI()
 
 # ==========================================
-# 1. 환경 변수 및 최신 Gemini 클라이언트 설정
+# 1. 환경 변수 및 Gemini 클라이언트 설정
 # ==========================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 AI_SECRET_TOKEN = os.getenv("AI_SECRET_TOKEN", "my_super_secret_ai_token")
 
-# 새로운 Client 방식 초기화
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 # ==========================================
@@ -115,19 +115,111 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             # print("=============================================\n")
             
             prompt = """
-            이 음성 파일(WAV)을 분석하여 사용자의 자해/위험 징후 및 심리 상태를 평가하고,
-            사용자가 한 말에 대해, 20대 딸의 밝고 애교 있는 말투로 답변을 작성해주세요.
-            반드시 지정된 JSON 포맷으로만 응답해야 하며, 어떠한 마크다운 태그나 설명도 포함하지 마세요.
-            
-            {
-              "risk_score": 0.0에서 1.0 사이의 실수 (위험도가 높고 비극적인 징후일수록 1.0에 가까움),
-              "primary_emotion": "happy", "sad", "angry", "anxious", "neutral" 중 하나를 영어 소문자로 선택,
-              "stt_text" : "사용자가 한 말을 텍스트로 변환"
-              "llm_summary": "한 줄로 작성된 한국어 심리 상태 요약문",
-              "reply_text": "피보호자의 말에 공감하고 다정하게 위로를 건네는 대화형 답변 (예: '모셔다 드리지 못해서 속상하네요 ㅠ 오늘 어디를 다녀오셨어요?')"
-            }
-            """
-            
+당신은 노인 회상치료(Reminiscence Therapy) 전문가이자
+정서 케어 AI입니다.
+
+업로드된 음성 파일을 분석하여 사용자의 심리 상태와 대화 내용을 평가하세요.
+
+[분석 목표]
+
+1. 현재 감정 상태 분석
+2. 우울감, 고립감, 자살 위험 징후 분석
+3. 인지 저하 또는 기억력 저하 징후 분석
+4. 사용자가 언급한 과거 기억 및 추억 요약
+5. 회상치료를 위한 후속 질문 생성
+6. 라이프로그(오늘의 기억 일기) 생성
+7. 사용자에게 공감적인 답변 생성
+
+반드시 아래 JSON 형식으로만 응답하세요.
+
+{
+  "risk_score": 0.0,
+  "depression_score": 0.0,
+  "isolation_score": 0.0,
+  "cognitive_decline_score": 0.0,
+
+  "primary_emotion": "neutral",
+
+  "llm_summary": "",
+
+  "memory_topics": [],
+
+  "memory_questions": [],
+
+  "life_log": "",
+
+  "care_level": "NORMAL",
+
+  "reply_text": ""
+}
+
+[점수 규칙]
+
+- 모든 score는 0.0 ~ 1.0 범위
+- 위험 징후가 없으면 0에 가깝게 평가
+- 위험 징후가 명확할수록 1에 가깝게 평가
+
+[care_level 규칙]
+
+NORMAL:
+일반적인 상태
+
+WATCH:
+관찰 필요
+
+WARNING:
+상담 또는 보호자 관심 필요
+
+EMERGENCY:
+즉각적인 보호자 개입 필요
+
+[memory_topics 규칙]
+
+- 사용자가 과거 기억이나 추억을 언급한 경우에만 작성
+- 관련 내용이 없으면 빈 배열 [] 반환
+
+[memory_questions 규칙]
+
+- 회상 주제가 존재할 때만 생성
+- 반드시 사용자의 발화 내용과 관련된 질문 생성
+- 회상 주제가 없으면 빈 배열 [] 반환
+- 최대 3개 생성
+
+[life_log 규칙]
+
+- 사용자의 대화 내용을 바탕으로 작성
+- 3~5문장 정도의 짧은 일기 형식
+- 실제 언급하지 않은 사실은 상상해서 추가하지 말 것
+
+[reply_text 규칙]
+
+- 따뜻하고 공감적인 돌봄 동반자의 말투
+- 자연스러운 존댓말 사용
+- 과도한 애교 금지
+- "~용", "~여", "~헤헤", "~꼬옥", ">_<" 사용 금지
+- 이모티콘 사용 금지
+- 차분하고 안정감 있는 표현 사용
+- 사용자의 이야기에 공감할 것
+- 대화를 자연스럽게 이어갈 질문 1개 포함
+
+좋은 예:
+"그러셨군요. 그 기억이 아직도 많이 남아 있으신 것 같습니다. 그때 가장 기억에 남는 일은 무엇이었나요?"
+
+나쁜 예:
+"어머~ 그러셨구나용~ 헤헤 >_<"
+
+[중요]
+
+- 음성이 단순 테스트(예: "테스트", "하나 둘 셋")인 경우
+  - risk_score는 0에 가깝게 평가
+  - memory_topics는 []
+  - memory_questions는 []
+  - life_log는 테스트 내용을 간단히 기록
+  - 과도한 해석 금지
+
+JSON 외의 문장은 절대 출력하지 마세요.
+"""
+
             print("[AI] Gemini 분석 요청 중...")
             
             # # 2. 분석 요청
@@ -250,11 +342,38 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
         except Exception as e:
             print(f"[AI Warning] 백엔드 콜백 전송 실패: {str(e)}")
             if attempt < max_retries:
-                print(f"[AI Retry] {base_delay}초 후 다시 콜백 송신을 시도합니다...\n")
-                await asyncio.sleep(base_delay)
+                wait_time = base_delay * attempt
+                print(f"[AI Retry] {wait_time}초 후 다시 시도합니다...\n")
+                await asyncio.sleep(wait_time)
+
     else:
-        # 백엔드 전송 최대 재시도 실패
-        print(f"\n[AI Fatal Error] 백엔드 콜백 전송 실패. 데이터가 유실되었습니다.")
+        print(f"\n[AI Critical Error] 최대 재시도 횟수({max_retries}회) 초과. 백엔드로 FAILED 콜백을 전송합니다.")
+
+        error_callback_body = {
+            "user_id": user_id,
+            "status": "FAILED",
+            "analysis_data": {
+                "risk_score": 0.0,
+                "depression_score": 0.0,
+                "isolation_score": 0.0,
+                "cognitive_decline_score": 0.0,
+                "primary_emotion": "neutral",
+                "llm_summary": "서버 과부하 또는 AI 통신 에러로 분석을 완료하지 못했습니다.",
+                "reply_text": "죄송합니다. 지금은 분석을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                "memory_topics": [],
+                "memory_questions": [],
+                "life_log": "",
+                "care_level": "NORMAL"
+            }
+        }
+
+        try:
+            async with httpx.AsyncClient() as http_client:
+                print(f"Backend Callback URL : {callback_url}\n")
+                res = await http_client.post(callback_url, json=error_callback_body, headers=headers)
+                print(f"[AI] FAILED 콜백 전송 완료. 백엔드 상태코드: {res.status_code}")
+        except Exception as callback_err:
+            print(f"[AI Fatal Error] 백엔드로 FAILED 콜백 실패: {str(callback_err)}")
 
 
 @app.get("/")
