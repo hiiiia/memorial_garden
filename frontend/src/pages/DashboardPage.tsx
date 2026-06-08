@@ -1,9 +1,15 @@
 // src/pages/DashboardPage.tsx
 
 import React, { useEffect, useState } from 'react';
-import { config } from '../config'; // API 주소 세팅
+import { useNavigate } from 'react-router-dom';
+import Calendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
+import '../css/CustomCalendar.css';
+import '../css/DashboardPage.css'; // 
+import '../css/MainPage.css';
 
-// --- TypeScript 인터페이스 정의 ---
+import { config } from '../config'; // API 주소 세팅
+// --- 인터페이스 정의 ---
 interface DashboardData {
   guardian_name: string;
   senior: { name: string; status: string };
@@ -13,15 +19,33 @@ interface DashboardData {
   recent_alerts: { id: number; content: string; time_ago: string; type: string }[];
 }
 
+interface DiaryData { id: number; date: string; imageUrl: string; content: string; keywords: string[]; }
+interface HealthData { id: number; date: string; depressionScore: number; dementiaScore: number; insight: string; }
+
+// --- 가상 데이터 (추후 백엔드 API로 교체) ---
+const mockDiaryData: DiaryData[] = [
+  { id: 1, date: "2026-06-05", imageUrl: "https://images.unsplash.com/photo-1490730141103-6cac27aaab94?auto=format&fit=crop&w=800&q=80", content: "오늘은 어린 시절 동네 어귀에서 친구들과 뛰놀던 기억을 떠올리셨어요...", keywords: ["어린시절", "골목길", "그리움"] },
+];
+const mockHealthData: HealthData[] = [
+  { id: 1, date: "2026-06-05", depressionScore: 15, dementiaScore: 8, insight: "최근 일주일 대비 발화 속도와 어휘 다양성이 매우 안정적입니다." },
+];
+
 const DashboardPage = () => {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const navigate = useNavigate();
+  
+  // 1. 대시보드 상태 관리
+  const [dashData, setDashData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
 
+  // 2. 하단 달력/탭 상태 관리
+  const [activeTab, setActiveTab] = useState<'diary' | 'report'>('diary');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date(2026, 5, 5)); // 2026년 6월 5일 기준 (임시)
+
+  // API 데이터 호출
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        // 로컬 스토리지에서 정보 꺼내기
         const token = localStorage.getItem('access_token');
         const guardianInfoStr = localStorage.getItem('guardian_info');
         
@@ -33,101 +57,221 @@ const DashboardPage = () => {
 
         const guardianInfo = JSON.parse(guardianInfoStr);
         const guardianId = guardianInfo.id;
-        const targetUserId = 'USER_ABC'; // 임시 하드코딩 (실제로는 연동된 어르신 ID)
+        const targetUserId = 'USER_ABC'; 
         const currentDate = new Date().toISOString();
 
-        // 백엔드 API 호출
-        const response = await fetch(
-          `${config.apiBaseUrl}/guardian/${guardianId}/dashboard?user_id=${targetUserId}&date=${currentDate}`,
-          {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}` // JWT 방문증 제시!
-            }
-          }
-        );
+        // const response = await fetch(
+        //   `${config.apiBaseUrl}/guardian/${guardianId}/dashboard?user_id=${targetUserId}&date=${currentDate}`,
+        //   {
+        //     method: 'GET',
+        //     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+        //   }
+        // );
 
-        const result = await response.json();
+        
+        // // =================================================================
+        // 🚨 원래 있던 fetch 로직을 잠시 주석 처리하거나 지웁니다.
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
 
-        if (response.ok && result.code === 200) {
-          setData(result.data);
-        } else {
-          setError(result.error || '데이터를 불러오지 못했습니다.');
-        }
+        // =================================================================
+
+        // 1. 임시 데이터를 객체로 만듭니다.
+        const dummyData = {
+          guardian_name: "가족", 
+          senior: { name: "김영희", status: "연동 중" },
+          today_condition: { 
+            state: "good", 
+            label: "안정", 
+            description: "특이사항이 없습니다.", 
+            color_code: "#388E3C" 
+          },
+          risk_assessment: { 
+            score: 32, 
+            level: "낮음", 
+            status_text: "안정적인 상태입니다." 
+          },
+          last_interaction: { 
+            time_label: "오늘 오전 9:12", 
+            duration_label: "AI와 15분 대화" 
+          },
+          recent_alerts: [
+            { id: 1, content: "오늘 일기가 공유되었습니다.", time_ago: "오전 9:15", type: "info" },
+            { id: 2, content: "위험도 변동이 없습니다.", time_ago: "어제", type: "success" },
+            { id: 3, content: "도움 요청이 없습니다.", time_ago: "어제", type: "success" }
+          ]
+        };
+
+        // 2. .json() 변환 과정 없이 곧바로 State에 집어넣습니다!
+        setDashData(dummyData);
+        setIsLoading(false);
+
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        // 테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용테스트용
+        
+
+        // const result = await response.json();
+        // if (response.ok && result.code === 200) {
+        //   setDashData(result.data);
+        // } else {
+        //   setError(result.error || '데이터를 불러오지 못했습니다.');
+        // }
       } catch (err) {
         setError('서버와의 통신에 실패했습니다.');
       } finally {
         setIsLoading(false);
       }
     };
-
     fetchDashboard();
   }, []);
 
-  // 로딩 화면
-  if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>데이터를 불러오는 중입니다...</div>;
-  
-  // 에러 화면
-  if (error || !data) return <div style={{ padding: '50px', textAlign: 'center', color: '#E57373' }}>{error}</div>;
+  // 날짜 변환 및 데이터 필터링
+  const formatYYYYMMDD = (date: Date) => {
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().split('T')[0];
+  };
 
-  // 메인 렌더링 화면
+  const selectedDateStr = formatYYYYMMDD(selectedDate);
+  const filteredDiary = mockDiaryData.find(d => d.date === selectedDateStr);
+  const filteredHealth = mockHealthData.find(d => d.date === selectedDateStr);
+
+  const getAlertIcon = (type: string) => type === 'warning' ? '🔴' : type === 'info' ? '🟡' : '🟢';
+  const getConditionIcon = (state: string) => state === 'good' ? '🙂' : state === 'bad' ? '😥' : '😐';
+
+  if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>대시보드를 준비 중입니다...</div>;
+  if (error || !dashData) return <div style={{ padding: '50px', textAlign: 'center', color: '#E57373' }}>{error}</div>;
+
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#FDFBF7', padding: '40px 20px', color: '#4A4A4A', fontFamily: 'sans-serif' }}>
-      <div style={{ maxWidth: '500px', margin: '0 auto' }}>
+    <div className="dashboard-container" style={{ paddingBottom: '80px' }}>
+      <div className="dashboard-content">
         
-        {/* 1. 상단 헤더 (인사말 & 연동 상태) */}
-        <div style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ fontSize: '24px', margin: '0 0 5px 0' }}>안녕하세요, <strong>{data.guardian_name}</strong>님!</h1>
-            <p style={{ margin: 0, color: '#888', fontSize: '15px' }}>오늘도 평안한 하루 되세요.</p>
+        {/* =========================================
+            SECTION 1: 실시간 대시보드 요약 (기존 DashboardPage 영역)
+            ========================================= */}
+        <header className="dashboard-header">
+          <div className="header-left">
+            <h1 className="header-title">안녕하세요, {dashData.guardian_name}님!</h1>
+            <p className="header-subtitle">연동된 가족의 실시간 상태를 확인하세요.</p>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#333' }}>{data.senior.name} 님</div>
-            <div style={{ fontSize: '12px', color: '#7A8B5F', backgroundColor: '#F4F7F0', padding: '4px 8px', borderRadius: '12px', display: 'inline-block', marginTop: '4px' }}>
-              ● {data.senior.status}
+          <div className="header-profile">
+            <div className="profile-avatar">👵🏻</div>
+            <div className="profile-info">
+              <p className="profile-name">{dashData.senior.name}님</p>
+              <p className="profile-status">{dashData.senior.status}</p>
             </div>
           </div>
-        </div>
+        </header>
 
-        {/* 2. 오늘의 상태 카드 */}
-        <div style={{ backgroundColor: '#FFF', borderRadius: '20px', padding: '25px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', marginBottom: '20px', borderTop: `5px solid ${data.today_condition.color_code}` }}>
-          <div style={{ fontSize: '14px', color: '#999', marginBottom: '10px' }}>오늘의 상태</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <div style={{ fontSize: '32px', fontWeight: '900', color: data.today_condition.color_code }}>{data.today_condition.label}</div>
-            <div style={{ fontSize: '16px', color: '#555' }}>{data.today_condition.description}</div>
+        {/* 상단 3개 카드 */}
+        <div className="card-grid-top">
+          <div className="dashboard-card" style={{ borderTop: `4px solid ${dashData.today_condition.color_code}` }}>
+            <h3 className="card-title">오늘의 상태</h3>
+            <div className="status-content">
+              <span className="status-icon">{getConditionIcon(dashData.today_condition.state)}</span>
+              <span className="status-text" style={{ color: dashData.today_condition.color_code }}>{dashData.today_condition.label}</span>
+            </div>
+            <p className="card-subtext">{dashData.today_condition.description}</p>
+          </div>
+          <div className="dashboard-card interactive" onClick={() => navigate('/analysis')}>
+            <h3 className="card-title">위험도 <span style={{fontSize:'12px', fontWeight:'normal', color:'#888'}}>(자세히 보기 ↗)</span></h3>
+            <h2 className="score-text">{dashData.risk_assessment.score}점</h2>
+            <p className="score-label">{dashData.risk_assessment.level}</p>
+            <p className="card-subtext">{dashData.risk_assessment.status_text}</p>
+          </div>
+          <div className="dashboard-card interactive" onClick={() => navigate('/diary')}>
+            <h3 className="card-title">마지막 대화 <span style={{fontSize:'12px', fontWeight:'normal', color:'#888'}}>(오늘 일기 ↗)</span></h3>
+            <div className="time-text">{dashData.last_interaction.time_label}</div>
+            <p className="card-subtext">{dashData.last_interaction.duration_label}</p>
           </div>
         </div>
 
-        {/* 3. 2단 그리드 (위험도 & 마지막 대화) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-          
-          {/* 위험도 위젯 */}
-          <div style={{ backgroundColor: '#FFF', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-            <div style={{ fontSize: '13px', color: '#999', marginBottom: '10px' }}>위험도 평가 ({data.risk_assessment.score}점)</div>
-            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#333', marginBottom: '5px' }}>{data.risk_assessment.level}</div>
-            <div style={{ fontSize: '13px', color: '#777' }}>{data.risk_assessment.status_text}</div>
-          </div>
-
-          {/* 마지막 대화 위젯 */}
-          <div style={{ backgroundColor: '#FFF', borderRadius: '20px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-            <div style={{ fontSize: '13px', color: '#999', marginBottom: '10px' }}>마지막 대화</div>
-            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#333', marginBottom: '5px' }}>{data.last_interaction.time_label}</div>
-            <div style={{ fontSize: '13px', color: '#7A8B5F' }}>{data.last_interaction.duration_label}</div>
-          </div>
+        {/* =========================================
+            SECTION 2: 과거 기록 달력 및 상세 탭 (기존 MainPage 영역)
+            ========================================= */}
+        <div style={{ marginTop: '50px', marginBottom: '20px', borderTop: '2px dashed #EAE5D9', paddingTop: '40px' }}>
+          <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '10px' }}>지난 기록 찾아보기</h2>
+          <p style={{ fontSize: '14px', color: '#888', marginBottom: '30px' }}>날짜를 선택하여 과거의 그림일기와 건강 지표를 확인해보세요.</p>
         </div>
 
-        {/* 4. 최근 알림 리스트 */}
-        <div style={{ backgroundColor: '#FFF', borderRadius: '20px', padding: '25px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#333', marginBottom: '20px' }}>최근 소식</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {data.recent_alerts.map((alert) => (
-              <div key={alert.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #F0F0F0', paddingBottom: '15px' }}>
-                <div style={{ fontSize: '15px', color: '#4A4A4A' }}>{alert.content}</div>
-                <div style={{ fontSize: '13px', color: '#AAA' }}>{alert.time_ago}</div>
+        <div className="calendar-wrapper">
+          <Calendar 
+            onChange={(value: any) => setSelectedDate(value as Date)} 
+            value={selectedDate}
+            formatDay={(locale: string | undefined, date: Date) => date.getDate().toString()}
+            tileContent={({ date, view }: { date: Date; view: string }) => {
+              if (view === 'month' && mockDiaryData.some(d => d.date === formatYYYYMMDD(date))) {
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2px' }}>
+                    <div style={{ width: '6px', height: '6px', backgroundColor: '#7A8B5F', borderRadius: '50%' }} />
+                  </div>
+                );
+              }
+              return null;
+            }}
+          />
+        </div>
+
+        <div className="tab-container">
+          <button onClick={() => setActiveTab('diary')} className={`tab-button ${activeTab === 'diary' ? 'active' : 'inactive'}`}>
+            📖 {selectedDate.getDate()}일 그림일기
+          </button>
+          <button onClick={() => setActiveTab('report')} className={`tab-button ${activeTab === 'report' ? 'active' : 'inactive'}`}>
+            🩺 마음 건강 지표
+          </button>
+        </div>
+
+        <div>
+          {!filteredDiary && !filteredHealth && (
+            <div className="empty-state">해당 날짜에는 기록된 데이터가 없습니다.</div>
+          )}
+
+          {activeTab === 'diary' && filteredDiary && (
+            <div className="diary-card interactive" onClick={() => navigate('/diary')}>
+              <img src={filteredDiary.imageUrl} alt="AI 그림일기" className="diary-img" />
+              <div className="diary-content-box">
+                <p className="diary-text">{filteredDiary.content}</p>
+                <div className="keyword-container">
+                  {filteredDiary.keywords.map((kw, idx) => (
+                    <span key={idx} className="keyword-tag">#{kw}</span>
+                  ))}
+                </div>
+                <div className="view-detail-link">전체 일기 및 감정 분석 보기 →</div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {activeTab === 'report' && filteredHealth && (
+            <div className="report-card interactive" onClick={() => navigate('/analysis')}>
+              <div className="score-section">
+                <div className="score-header">
+                  <span className="score-title">우울/고립감 지수</span>
+                  <span className={`score-value ${filteredHealth.depressionScore > 50 ? 'high' : 'normal'}`}>{filteredHealth.depressionScore}점</span>
+                </div>
+                <div className="progress-bar-bg">
+                  <div className={`progress-bar-fill ${filteredHealth.depressionScore > 50 ? 'high' : 'normal'}`} style={{ width: `${filteredHealth.depressionScore}%` }} />
+                </div>
+              </div>
+              <div className="score-section">
+                <div className="score-header">
+                  <span className="score-title">인지 저하(치매) 징후 스코어</span>
+                  <span className={`score-value ${filteredHealth.dementiaScore > 50 ? 'high' : 'normal'}`}>{filteredHealth.dementiaScore}점</span>
+                </div>
+                <div className="progress-bar-bg">
+                  <div className={`progress-bar-fill ${filteredHealth.dementiaScore > 50 ? 'high' : 'normal'}`} style={{ width: `${filteredHealth.dementiaScore}%` }} />
+                </div>
+              </div>
+              <div className="insight-box">
+                <p className="insight-text"><strong>💡 주치의 AI 소견:</strong><br/>{filteredHealth.insight}</p>
+              </div>
+              <div className="view-detail-link">7일간 변화 및 추천 행동 보기 →</div>
+            </div>
+          )}
         </div>
 
       </div>

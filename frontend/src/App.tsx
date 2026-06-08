@@ -1,10 +1,19 @@
 // src/App.tsx
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+
 import LoginPage from './pages/LoginPage';
 import KakaoCallbackPage from './pages/KakaoCallbackPage'; 
+
+import SignupPage from './pages/SignupPage';
 import ExtraSignupPage from './pages/ExtraSignupPage';
+
 import MainPage from './pages/MainPage';
+
+import DashboardPage from './pages/DashboardPage';
+import DiaryPage from './pages/DiaryPage';
+import RiskAnalysisPage from './pages/RiskAnalysisPage';
+
 import Header from './components/Header';
 
 const App = () => {
@@ -38,12 +47,18 @@ const App = () => {
       <Header isLoggedIn={isLoggedIn} onLogout={handleLogout} />
       <div style={{ padding: '20px' }}>
         <Routes>
-          <Route path="/"  element={isLoggedIn ? (<MainPage />) : (<Navigate to="/login" replace /> )}  />
+          <Route path="/"  element={isLoggedIn ? (<DashboardPage />) : (<Navigate to="/login" replace /> )}  />
 
           <Route path="/login" element={isLoggedIn ? <Navigate to="/" replace /> : <LoginPage setIsLoggedIn={setIsLoggedIn} />} />
-
+          <Route path="/signup" element={<SignupPage />} />
           <Route path="/auth/kakao/callback" element={<KakaoCallbackPage setIsLoggedIn={setIsLoggedIn}  />} />
           <Route path="/signup/extra" element={<ExtraSignupPage />} />
+
+          {/* 서비스 메인 및 상세 페이지 */}
+          {/*<Route path="/dashboard" element={<DashboardPage />} />*/}
+          <Route path="/diary" element={<DiaryPage />} />
+          <Route path="/analysis" element={<RiskAnalysisPage />} />
+          
         </Routes>
       </div>
     </BrowserRouter>

@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { config } from '../config'; // config 객체 불러오기
+import '../css/CustomCalendar.css';
+import '../css/LoginPage.css'
 
 // (App.tsx에서 받아온 리모컨)
 interface LoginPageProps {
@@ -25,7 +28,7 @@ const LoginPage = ({ setIsLoggedIn }: LoginPageProps) => {
     formData.append('password', password);
 
     try {
-      const response = await fetch(`${config.apiBaseUrl}/auth/login`, {
+      const response = await fetch(`${config.apiBaseUrl}api/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -37,7 +40,7 @@ const LoginPage = ({ setIsLoggedIn }: LoginPageProps) => {
 
       if (response.ok) {
         // 성공 시 토큰과 유저 정보 저장
-const token = data.data?.access_token || data.access_token;
+        const token = data.data?.access_token || data.access_token;
         const guardianInfo = data.data?.guardian || data.guardian;
         
         // 2. 안전하게 저장
@@ -65,52 +68,74 @@ const token = data.data?.access_token || data.access_token;
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', fontFamily: 'sans-serif' }}>
-      <h2>Memorial Garden 로그인</h2>
-      
-      {errorMsg && <p style={{ color: 'red', fontWeight: 'bold' }}>{errorMsg}</p>}
+    <div className="login-page-container">
+      <div className="login-box">
+        
+        {/* 헤더 영역 */}
+        <div className="login-header">
+          <h2 className="login-title">Memorial Garden</h2>
+          <p className="login-subtitle">소중한 기억을 함께 돌보는 공간</p>
+        </div>
+        
+        {/* 에러 메시지 출력 영역 */}
+        {errorMsg && (
+          <div className="error-message">
+            {errorMsg}
+          </div>
+        )}
 
-      {/* 폼 전송 시 handleNormalLogin 함수가 실행됩니다. */}
-      <form onSubmit={handleNormalLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        <div>
-          <label>아이디</label><br />
+        {/* 일반 로그인 폼 */}
+        <form onSubmit={handleNormalLogin} className="login-form">
           <input 
             type="text" 
             value={username} 
             onChange={(e) => setUsername(e.target.value)} 
             placeholder="아이디를 입력하세요"
             required
-            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+            className="login-input"
           />
-        </div>
-        
-        <div>
-          <label>비밀번호</label><br />
+          
           <input 
             type="password" 
             value={password} 
             onChange={(e) => setPassword(e.target.value)} 
             placeholder="비밀번호를 입력하세요"
             required
-            style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+            className="login-input"
           />
+
+          <button type="submit" className="login-btn login-btn-normal">
+            로그인
+          </button>
+        </form>
+
+        {/* 구분선 */}
+        <div className="login-divider">
+          <div className="divider-line"></div>
+          <div className="divider-text">또는</div>
+          <div className="divider-line"></div>
         </div>
 
-        <button type="submit" style={{ padding: '10px', backgroundColor: '#4CAF50', color: 'white', border: 'none', cursor: 'pointer' }}>
-          로그인
+        {/* 카카오 로그인 버튼 */}
+        <button 
+          onClick={handleKakaoLogin} 
+          className="login-btn login-btn-kakao"
+        >
+          <span className="kakao-icon">💬</span> 카카오로 시작하기
         </button>
-      </form>
 
-      <hr style={{ margin: '30px 0' }} />
+        {/* 회원가입 링크 연결 */}
+        <div className="signup-link-container">
+          아직 계정이 없으신가요?{' '}
+          <Link to="/signup" className="signup-link">
+            회원가입하기
+          </Link>
+        </div>
 
-      <button 
-        onClick={handleKakaoLogin} 
-        style={{ width: '100%', padding: '10px', backgroundColor: '#FEE500', color: '#000000', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}
-      >
-        카카오로 시작하기
-      </button>
+      </div>
     </div>
   );
 };
+
 
 export default LoginPage;
