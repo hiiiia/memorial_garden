@@ -12,6 +12,7 @@ services:
       - "8000:8000"
     env_file:
       - .env  # 백엔드도 .env를 읽어서 DB에 접속합니다.
+
     environment:
       - AI_PROXY_URL=http://ai:8001
 
@@ -41,6 +42,18 @@ services:
       - /app/node_modules
     ports:
       - "3000:3000"
+    env_file:
+      - .env  # 프론트도 .env를 읽기.
+        # 빌드할 때 환경 변수 이름을 바꿔서 주입
+    # 환경 변수의 이름을 바꿔 넣기
+    environment:
+      - WATCHPACK_POLLING=true    # (Hot Reload) 웹팩 폴링 활성화
+      - CHOKIDAR_USEPOLLING=true  # (Hot Reload) 파일 감시자 폴링 활성화
+      - REACT_APP_KAKAO_REST_API_KEY=${KAKAO_REST_API_KEY}
+      - REACT_APP_BACKEND_URL=${BACKEND_URL}
+      - REACT_APP_FRONTEND_URL=${FRONTEND_URL}
+
+
     command: sh -c "npm install && npm start"
     stdin_open: true
     tty: true

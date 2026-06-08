@@ -13,10 +13,19 @@ class Guardian(Base):
 
     # default=generate_uuid 추가
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
+    username = Column(String(50), unique=True, index=True)
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     name = Column(String(50), nullable=False)
     phone = Column(String(20), nullable=False)
+    
+    # 카카오 유저 고유 식별자 컬럼 추가 (일반 가입 유저를 위해 nullable=True)
+    kakao_id = Column(String(50), unique=True, index=True, nullable=True)
+    
+    # 카카오 메시지 전송을 위한 토큰 저장 컬럼
+    kakao_access_token = Column(String(255), nullable=True)
+    kakao_refresh_token = Column(String(255), nullable=True)
+    
     created_at = Column(DateTime, server_default=func.now())
 
     dependents = relationship("Dependent", back_populates="guardian")

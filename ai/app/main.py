@@ -9,6 +9,7 @@ from google import genai
 from google.genai import types
 
 from app.config import settings
+from app.utils.backup import save_failed_callback_to_local
 import asyncio
 
 app = FastAPI()
@@ -306,12 +307,11 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 wait_time = base_delay * attempt
                 print(f"[AI Retry] {wait_time}초 후 분석을 다시 시도합니다...\n")
                 await asyncio.sleep(wait_time)
-    else:
-        # break 없이 루프가 끝났다면 (최대 재시도 실패)
-        print(f"\n[AI Critical Error] Gemini 분석 최대 재시도({max_retries}회) 초과.")
-        await send_failed_callback(callback_url, user_id, headers)
-        return # 분석에 실패했으므로 여기서 완전히 종료합니다.
-
+            else:
+                # break 없이 루프가 끝났다면 (최대 재시도 실패)
+                print(f"\n[AI Critical Error] Gemini 분석 최대 재시도({max_retries}회) 초과.")
+                await send_failed_callback(callback_url, user_id, headers)
+                return # 분석에 실패했으므로 여기서 완전히 종료합니다.
 
     # ---------------------------------------------------------
     # [Phase 2] 백엔드 콜백 전송 (재시도 로직 독립)
@@ -337,43 +337,36 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 res.raise_for_status() 
                 print(f"[AI] ✅ 백엔드 전송 완료! 상태코드: {res.status_code}")
             
-            break # 전송 성공 시 Phase 2 루프 탈출
+            break # 전송 성공 시 Phase 2 루프 정상 탈출
 
         except Exception as e:
             print(f"[AI Warning] 백엔드 콜백 전송 실패: {str(e)}")
             if attempt < max_retries:
                 wait_time = base_delay * attempt
-                print(f"[AI Retry] {wait_time}초 후 다시 시도합니다...\n")
+                print(f"[AI Retry] {wait_time}초 후 콜백 송신을 다시 시도합니다...\n")
                 await asyncio.sleep(wait_time)
 
     else:
-        print(f"\n[AI Critical Error] 최대 재시도 횟수({max_retries}회) 초과. 백엔드로 FAILED 콜백을 전송합니다.")
-
-        error_callback_body = {
-            "user_id": user_id,
-            "status": "FAILED",
-            "analysis_data": {
-                "risk_score": 0.0,
-                "depression_score": 0.0,
-                "isolation_score": 0.0,
-                "cognitive_decline_score": 0.0,
-                "primary_emotion": "neutral",
-                "llm_summary": "서버 과부하 또는 AI 통신 에러로 분석을 완료하지 못했습니다.",
-                "reply_text": "죄송합니다. 지금은 분석을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
-                "memory_topics": [],
-                "memory_questions": [],
-                "life_log": "",
-                "care_level": "NORMAL"
-            }
-        }
-
+        # Phase 2의 for 루프가 break 없이 모두 실패로 끝났을 때 실행됨
+        print(f"\n[AI Critical Error] COMPLETED 콜백 전송 최대 재시도({max_retries}회) 초과.")
+        
+        # 개선 포인트: Phase 1에서 이미 사용 중인 헬퍼 함수를 호출하여 중복 코드 제거!
         try:
-            async with httpx.AsyncClient() as http_client:
-                print(f"Backend Callback URL : {callback_url}\n")
-                res = await http_client.post(callback_url, json=error_callback_body, headers=headers)
-                print(f"[AI] FAILED 콜백 전송 완료. 백엔드 상태코드: {res.status_code}")
-        except Exception as callback_err:
-            print(f"[AI Fatal Error] 백엔드로 FAILED 콜백 실패: {str(callback_err)}")
+            print(f"[AI] 백엔드로 FAILED 콜백 송신을 시도합니다...")
+            await send_failed_callback(callback_url, user_id, headers)
+            print(f"[AI] ✅ FAILED 상태 백엔드 전송 완료!")
+        except Exception as fallback_e:
+            print(f"\n[AI Fatal Error] FAILED 콜백 전송마저 실패했습니다: {str(fallback_e)}")
+            print(f"[AI Recovery] 데이터 유실 방지를 위해 로컬 저장을 시도합니다...")
+            
+            # 로컬 Json 저장 함수
+            save_failed_callback_to_local(
+                job_id=job_id,
+                user_id=user_id,
+                payload=callback_body,       # 원본 데이터
+                error_reason=str(fallback_e) # 실패한 이유
+            )
+            
 
 
 @app.get("/")
