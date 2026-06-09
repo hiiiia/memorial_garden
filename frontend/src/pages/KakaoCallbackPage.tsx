@@ -1,11 +1,10 @@
 // src/pages/KakaoCallbackPage.tsx
 import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { config } from '../config'; // config 객체 불러오기
 
-// (App.tsx에서 받아온 리모컨)
-interface LoginPageProps {
-  setIsLoggedIn: (value: boolean) => void;
-}
+
+import { LoginPageProps } from '../types/interface';
 
 
 const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
@@ -24,18 +23,18 @@ const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
       isCalled.current = true;
 
       try {
-        // 🌟 백엔드의 /kakao/login API로 코드를 전송합니다!
-        const response = await fetch('http://localhost:8000/api/v1/auth/kakao/login', {
+        //  백엔드의 /kakao/login API로 코드를 전송합니다!
+        const response = await fetch(`${config.apiBaseUrl}api/v1/auth/kakao/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             code: code,
-            redirect_uri: 'http://localhost:3000/auth/kakao/callback', // 카카오 디벨로퍼스에 등록한 주소와 100% 동일해야 합니다.
+            redirect_uri: `${config.frontendUrl}/auth/kakao/callback`, // 카카오 디벨로퍼스에 등록한 주소와 동일해야 합니다.
           }),
         });
-
+        console.log(`${config.frontendUrl}/auth/kakao/callback`);
         const data = await response.json();
 
         if (response.ok) {
@@ -57,15 +56,21 @@ const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
             alert('카카오로 로그인되었습니다!');
             navigate('/', { replace: true }); // 메인 화면으로 이동
           }
-        } else {
-          alert(`로그인 실패: ${data.error}`);
-          navigate('/login');
+          } else {
+            //  [추가된 방어 로직 1] 백엔드에서 400, 500 에러를 던졌을 때
+            const errorData = await response.json().catch(() => ({})); // JSON 파싱 실패 대비
+            const errorMsg = errorData.error || errorData.message || errorData.detail || '서버 오류가 발생했습니다.';
+            alert(`로그인 처리 실패: ${errorMsg}`);
+            navigate('/login', { replace: true }); // 뒤로가기 방지하며 로그인 페이지로 돌려보냄
+          }
+        } catch (error) {
+          // [추가된 방어 로직 2] 백엔드가 완전히 죽었거나 네트워크 통신 자체가 실패했을 때
+          console.error("카카오 로그인 통신 에러:", error);
+          alert('서버와 연결할 수 없습니다. DB나 백엔드 서버 상태를 확인해 주세요.');
+          navigate('/login', { replace: true });
         }
-      } catch (err) {
-        alert('서버와 통신 중 오류가 발생했습니다.');
-        navigate('/login');
-      }
-    };
+      };
+-
 
     sendCodeToBackend();
   }, [code, navigate]);

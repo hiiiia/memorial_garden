@@ -1,0 +1,238 @@
+/* src/pages/SeniorRegisterPage.css */
+
+.register-container {
+  min-height: 100vh;
+  background-color: #FDFBF7;
+  padding: 40px 20px;
+  font-family: sans-serif;
+  color: #333;
+}
+
+.register-content {
+  max-width: 500px; /* 기존 상세 페이지들보다 약간 좁게 설정하여 집중도 향상 */
+  margin: 0 auto;
+}
+
+.register-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.register-title {
+  font-size: 24px;
+  font-weight: bold;
+  margin: 0 0 10px 0;
+}
+
+.register-subtitle {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.register-card {
+  background-color: #FFF;
+  border-radius: 16px;
+  padding: 30px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+/* --- 검색 영역 --- */
+.search-section {
+  margin-bottom: 30px;
+}
+
+.search-label {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 5px;
+  display: block;
+}
+
+.search-desc {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 15px;
+}
+
+.search-input-group {
+  display: flex;
+  gap: 10px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 12px 15px;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: #7A8B5F;
+}
+
+.search-btn {
+  background-color: #1B873F;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.search-btn:hover {
+  background-color: #146c31;
+}
+
+.search-btn:disabled {
+  background-color: #A5D6A7;
+  cursor: not-allowed;
+}
+
+.search-guide-box {
+  background-color: #F4F7F0;
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 15px;
+  font-size: 13px;
+  color: #555;
+  line-height: 1.5;
+}
+
+/* --- 어르신 프로필 카드 --- */
+.senior-profile-card {
+  border: 1px solid #E0E0E0;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  margin-top: 20px;
+}
+
+.profile-top {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.profile-avatar-large {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background-color: #FFD4C2;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 35px;
+}
+
+.profile-details {
+  flex: 1;
+}
+
+.senior-name {
+  font-size: 18px;
+  font-weight: bold;
+  margin: 0 0 10px 0;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+
+.info-label {
+  width: 70px;
+  color: #888;
+}
+
+.info-value {
+  color: #333;
+  font-weight: 500;
+}
+
+.link-request-btn {
+  align-self: flex-end;
+  background-color: #FFF;
+  color: #7A8B5F;
+  border: 1px solid #7A8B5F;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.link-request-btn:hover {
+  background-color: #F4F7F0;
+}
+
+/* --- 완료 화면 --- */
+.success-section {
+  text-align: center;
+  padding: 20px 0 0 0;
+}
+
+.success-icon {
+  width: 60px;
+  height: 60px;
+  background-color: #388E3C;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 30px;
+  margin: 0 auto 20px auto;
+}
+
+.success-title {
+  font-size: 22px;
+  font-weight: bold;
+  margin: 0 0 10px 0;
+}
+
+.success-desc {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 30px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 30px;
+}
+
+.btn-outline, .btn-solid {
+  flex: 1;
+  padding: 14px 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  text-align: center;
+}
+
+.btn-outline {
+  background-color: #FFF;
+  border: 1px solid #CCC;
+  color: #555;
+}
+
+.btn-solid {
+  background-color: #1B873F;
+  border: 1px solid #1B873F;
+  color: #FFF;
+}

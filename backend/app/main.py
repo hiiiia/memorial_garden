@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import settings
 from db.database import engine
 from db import models
+from sqlalchemy.exc import OperationalError
 
 from sqlalchemy.exc import OperationalError
 from fastapi.exceptions import RequestValidationError
