@@ -18,8 +18,6 @@ const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
-  const [isChecking, setIsChecking] = useState(true);
-
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
