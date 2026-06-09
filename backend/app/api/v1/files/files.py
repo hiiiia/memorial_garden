@@ -1,12 +1,11 @@
-# api/v1/files.py
 import httpx
 import os
-from fastapi import APIRouter, Depends, UploadFile, File, Form, status, BackgroundTasks, Request
+import uuid
+from fastapi import APIRouter, Depends, UploadFile, File, Form, status, BackgroundTasks, Request, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
-import uuid
 
 from core.config import settings
 from core.storage import save_file_and_get_url
@@ -27,46 +26,53 @@ security = HTTPBearer(auto_error=False)
 async def upload_audio(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    user_id: str = Form(...),
+    user_id: str = Form(..., description="어르신 고유 ID"),
     device_id: str = Form(...),
     audio_file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    
     new_job_id = uuid.uuid4().hex
     
-    # 1. 검증 로직
-    # 인증 실패 응답 (401 일괄 적용)
+    # 1. 시크릿 토큰 검증 (HTTPBearer)
     if not credentials or credentials.scheme != "Bearer" or credentials.credentials != settings.API_SECRET_TOKEN:
         print("인증 실패: 토큰 누락 또는 불일치")
-        return unified_response(
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            error="Unauthorized. Invalid or missing token."
+            detail="Unauthorized. Invalid or missing token."
         )
 
-    # 2. 파일 확장자 검증 (400 일괄 적용)
+    # 2. 유효한 대상자인지 DB 검증 (방어선 구축)
+    dependent_exists = db.query(models.Dependent).filter(models.Dependent.id == user_id).first()
+    if not dependent_exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Failed. Target dependent user not found."
+        )
+
+    # 3. 파일 확장자 검증 (오디오 포맷 체크)
     if not audio_file.filename.endswith(('.wav', '.mp3', '.m4a')):
-        return unified_response(
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            error="Failed. Check Data"
+            detail="Failed. Invalid file format."
         )
     
-    # 3. 파일 저장 및 URL 획득 
+    # 4. 파일 저장소 스토리지 업로드 및 오디오 파일 URL 획득 
     try:
         real_file_url = await save_file_and_get_url(audio_file, request)
     except Exception as e:
         print(f"파일 저장 에러: {e}")
-        return unified_response(
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            error="File Save Error"
+            detail="File Save Error"
         )
 
-    # 4. DB 저장
+    # 5. DB 로그 생성 (기록 저장)
     try:
         new_log = models.Log(
             id=new_job_id,
             dependent_id=user_id,
             file_url=real_file_url,
+            image_url=None,          # [DB 스펙 반영] 초기 업로드 시에는 그림일기가 없으므로 명시적 null 세팅
             status="PROCESSING"
         )
         db.add(new_log)
@@ -74,12 +80,12 @@ async def upload_audio(
     except Exception as e: 
         print(f"[DB 저장 에러 발생]: {e}")
         db.rollback()
-        return unified_response(
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            error="Failed. Check Data"
+            detail="Failed. Check Data"
         )
 
-    # 성공 응답 (201 일괄 적용 - URL은 data 필드에 주입)
+    # 성공 응답 규격 생성 및 구조화 전송
     return unified_response(
         status_code=status.HTTP_201_CREATED,
         message="File uploaded successful.",
@@ -95,17 +101,15 @@ async def upload_audio(
 # 스펙: POST /api/v1/files/analysis/jobs
 # ----------------------------------------------------
 
-# 명세서의 Request Body JSON 스펙 정의
 class AnalysisJobRequest(BaseModel):
     user_id: str
     device_id: str
     file_url: str
     job_id: str
 
-# AI 서버로 분석 요청하는 비동기 함수
+# AI 서버로 분석 요청을 파이프라이닝하는 비동기 워커 태스크
 async def forward_to_ai_server(payload: dict):
     ai_target_url = f"{settings.AI_PROXY_URL}/api/v1/analyze"
-    #callback_url = f"http://backend:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
     callback_url = f"http://backend:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
 
     async with httpx.AsyncClient() as client:
@@ -114,29 +118,36 @@ async def forward_to_ai_server(payload: dict):
             
             response = await client.post(
                 ai_target_url,
-                json={"job_id": payload["job_id"], "user_id": payload["user_id"], "file_path": payload["file_url"], "callback_url": callback_url},
-                headers={"Authorization": f"Bearer {settings.AI_SECRET_TOKEN}", "Content-Type": "application/json"},
+                json={
+                    "job_id": payload["job_id"], 
+                    "user_id": payload["user_id"], 
+                    "file_path": payload["file_url"], 
+                    "callback_url": callback_url
+                },
+                headers={
+                    "Authorization": f"Bearer {settings.AI_SECRET_TOKEN}", 
+                    "Content-Type": "application/json"
+                },
                 timeout=10.0
             )
             response.raise_for_status()
             print(f"[AI 인계 성공] Status: {response.status_code}, Job ID: {payload['job_id']}")
             
         except Exception as e:
-            # 🚨 에러 발생 시: 허공에 응답하는 대신 DB 상태를 'FAILED'로 업데이트!
             print(f"[AI 인계 실패] 에러 발생: {str(e)}")
             
-            # 백그라운드 전용 독립적인 DB 세션을 엽니다.
+            # 네트워크 통신 장애 혹은 프록시 타임아웃 발생 시 FAILED 상태 트래킹 진행
             db = SessionLocal()
             try:
                 log_record = db.query(models.Log).filter(models.Log.id == payload['job_id']).first()
                 if log_record:
-                    log_record.status = "FAILED"  # 프론트엔드가 나중에 확인할 수 있도록 상태 변경
+                    log_record.status = "FAILED"
                     db.commit()
             except Exception as db_e:
                 print(f"[DB 롤백 오류] 상태 업데이트 실패: {str(db_e)}")
                 db.rollback()
             finally:
-                db.close() # 작업이 끝나면 반드시 세션을 닫아줍니다.
+                db.close()
 
 
 @router.post("/analysis/jobs", status_code=status.HTTP_202_ACCEPTED)
@@ -149,13 +160,13 @@ async def request_analysis(
     # 1. Header 토큰 검증
     if not credentials or credentials.scheme != "Bearer" or credentials.credentials != settings.API_SECRET_TOKEN:
         print("인증 실패: 토큰 누락 또는 불일치")
-        return unified_response(
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            error="Unauthorized. Invalid or missing token."
+            detail="Unauthorized. Invalid or missing token."
         )
         
     try:
-        # 2. 명세서로 들어온 job_id가 이미 존재하는지 로그 확인 후 업데이트 혹은 신규 등록
+        # 2.  검사 및 로그 덮어쓰기 로직
         log_record = db.query(models.Log).filter(models.Log.id == request_data.job_id).first()
         
         if log_record:
@@ -166,6 +177,7 @@ async def request_analysis(
                 id=request_data.job_id,
                 dependent_id=request_data.user_id,
                 file_url=request_data.file_url,
+                image_url=None,  # [DB 스펙 반영] 신규 로그 등록 시 초기값 세팅 보장
                 status="PROCESSING"
             )
             db.add(log_record)
@@ -174,15 +186,15 @@ async def request_analysis(
     except Exception as e:
         print(f"DB 처리 중 에러 발생: {e}")
         db.rollback()
-        return unified_response(
+        raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            error="Failed. Check Format"
+            detail="Failed. Check Format"
         )
 
-    # 3. 백그라운드 태스크 등록
+    # 3. 비동기 백그라운드 스케줄러 적재
     background_tasks.add_task(forward_to_ai_server, request_data.dict())
 
-    # 4. Success 응답 (202 일괄 적용 - job_id는 data 필드에 주입)
+    # 4. Success 비동기 인계 접수 완료 반환
     return unified_response(
         status_code=status.HTTP_202_ACCEPTED,
         message="Log and analysis Queued.",

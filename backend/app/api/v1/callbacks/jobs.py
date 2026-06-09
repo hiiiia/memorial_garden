@@ -15,7 +15,7 @@ from db.database import get_db
 from db import models
 from core.config import settings
 from api.v1.utils.notifier import send_emergency_alert, send_kakao_alert
-
+from api.v1.utils.security import verify_ai_token
 
 router = APIRouter()
 
@@ -26,6 +26,7 @@ class AnalysisData(BaseModel):
     llm_summary: str
     reply_text: str
     stt_text : str
+    image_url: str = None # AI가 생성한 그림일기 URL 추가
 
 class CallbackRequest(BaseModel):
     user_id: str
@@ -36,15 +37,6 @@ class CallbackRequest(BaseModel):
 AI_SECRET_TOKEN = settings.AI_SECRET_TOKEN
 OPENAI_API_KEY = settings.OPENAI_API_KEY
 
-async def verify_ai_token(authorization: str = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid token format")
-    
-    token = authorization.split(" ")[1]
-    if token != AI_SECRET_TOKEN:
-        raise HTTPException(status_code=403, detail="Forbidden: 토큰이 일치하지 않습니다.")
-    
-    return token
 
 # async def generate_tts_audio_open_ai(text: str, job_id: str) -> str:
 #     """OpenAI TTS를 호출하여 음성 파일을 생성하고 경로를 반환합니다."""
@@ -72,7 +64,7 @@ async def verify_ai_token(authorization: str = Header(None)):
 #         response = await client.post(url, headers=headers, json=data, timeout=30.0)
         
 #         if response.status_code == 200:
-#             # 🌟 스트리밍으로 받아서 파일로 저장 (aiofiles 사용)
+#             # 스트리밍으로 받아서 파일로 저장 (aiofiles 사용)
 #             async with aiofiles.open(save_path, 'wb') as f:
 #                 await f.write(response.content)
 #             print(f"[TTS] ✅ 음성 파일 생성 완료: {save_path}")
@@ -110,8 +102,6 @@ async def generate_tts_audio_edge(text: str, job_id: str) -> str:
         return None
 
 
-
-
 # --- 3. 콜백 API 엔드포인트 ---
 @router.post("/{job_id}/analyzing-result")
 async def receive_ai_callback(
@@ -121,7 +111,6 @@ async def receive_ai_callback(
     db: Session = Depends(get_db)
 ):
     print(f"\n[Backend] 🔔 AI 서버로부터 콜백 수신 완료! (Job ID: {job_id})")
-    print(f"[Backend] 상태: {payload.status}")
     
     # 1. DB에서 해당 job_id 찾기
     log_record = db.query(models.Log).filter(models.Log.id == job_id).first()
@@ -131,15 +120,7 @@ async def receive_ai_callback(
         raise HTTPException(status_code=404, detail="Job ID not found")
     
     if payload.status == "COMPLETED":
-        
-        
-        print(f"[Backend] 위험도: {payload.analysis_data.risk_score}")
-        print(f"[Backend] 주 감정: {payload.analysis_data.primary_emotion}")
-        print(f"[Backend] AI 요약: {payload.analysis_data.llm_summary}")
-        print(f"[Backend] 💬 AI 답변: {payload.analysis_data.reply_text}")
-        print(f"[Backend] 💬 STT: {payload.analysis_data.stt_text}")
-        
-        # 2. DB 업데이트 (성공 상태 및 분석 데이터 매핑)
+        # 2. DB 업데이트 (분석 데이터 매핑 및 그림일기 URL 추가)
         log_record.status = "COMPLETED"
         log_record.risk_score = payload.analysis_data.risk_score
         log_record.primary_emotion = payload.analysis_data.primary_emotion
@@ -147,56 +128,74 @@ async def receive_ai_callback(
         log_record.reply_text = payload.analysis_data.reply_text
         log_record.stt_text = payload.analysis_data.stt_text
         
+        # 그림일기 이미지가 생성되어 넘어왔다면 저장
+        if payload.analysis_data.image_url:
+            log_record.image_url = payload.analysis_data.image_url
+            
         # TTS 생성 및 파일 경로 저장
         if payload.analysis_data.reply_text:
             audio_url = await generate_tts_audio_edge(payload.analysis_data.reply_text, job_id)
             if audio_url:
-                log_record.reply_audio_url = audio_url # DB에 음성 파일 URL 업데이트
+                log_record.reply_audio_url = audio_url 
                 
     elif payload.status == "FAILED":
         print("[Backend] 🚨 AI 분석 실패 보고를 받았습니다.")
-        
-        # 3. DB 업데이트 (실패 상태만 변경)
         log_record.status = "FAILED"
         
-    # 4. 트랜잭션 확정 (DB에 영구 저장)
+    # 3. 트랜잭션 확정 (DB에 영구 저장)
     try:
         db.commit()
-        print("[Backend] ✅ DB 업데이트 및 커밋 완료!")
     except Exception as e:
         db.rollback()
         print(f"[Backend Error] DB 커밋 중 에러 발생: {e}")
         raise HTTPException(status_code=500, detail="Database commit failed")
     
-    
-    DANGER_THRESHOLD = 0.0 # 테스트용이므로 0.0 유지
+    # 4. 위험도 평가 및 알림 발송 로직
+    DANGER_THRESHOLD = 70.0 # 프론트엔드 위험 기준(70점)에 맞춤
         
-    if payload.analysis_data.risk_score >= DANGER_THRESHOLD:
-        target_name = log_record.dependent.name if log_record.dependent else "알 수 없는 사용자"
-        guardian_obj = log_record.dependent.guardian if log_record.dependent else None
+    if payload.status == "COMPLETED":
+        dependent = log_record.dependent
+        target_name = dependent.name if dependent else "어르신"
         
-        # 보호자 정보가 있을 때만 알림 발송 진행
-        if guardian_obj:
-            print(f"[Alert] 위험 감지! {guardian_obj.name} 보호자에게 알림을 발송합니다.")
-            
-            # 🌟 슬랙 알림과 카카오톡 알림을 동시에(병렬로) 실행하여 지연 시간을 줄입니다.
-            await asyncio.gather(
-                send_emergency_alert(
-                    risk_score=payload.analysis_data.risk_score,
-                    summary=payload.analysis_data.llm_summary,
-                    text=payload.analysis_data.stt_text,
-                    dependent_name=target_name,
-                    guardian_phone=guardian_obj.phone,
-                    guardian_name=guardian_obj.name
-                ),
-                send_kakao_alert(
-                    guardian=guardian_obj, # DB에서 찾은 보호자 객체 통째로 전달
-                    dependent_name=target_name,
-                    risk_score=payload.analysis_data.risk_score,
-                    summary=payload.analysis_data.llm_summary
+        #  매핑 테이블을 통해 현재 'CONNECTED' 상태인 모든 보호자 찾기
+        connected_mappings = db.query(models.GuardianDependentMapping).filter(
+            models.GuardianDependentMapping.dependent_id == log_record.dependent_id,
+            models.GuardianDependentMapping.status == "CONNECTED"
+        ).all()
+
+        # 대시보드 위젯에 띄워줄 알림을 DB(Alert 테이블)에 저장
+        trigger_type = "AI_RISK" if payload.analysis_data.risk_score >= DANGER_THRESHOLD else "INFO"
+        
+        new_alert = models.Alert(
+            dependent_id=log_record.dependent_id,
+            log_id=log_record.id,
+            trigger_type=trigger_type,
+            status="RESOLVED" if trigger_type == "INFO" else "PENDING"
+        )
+        db.add(new_alert)
+        db.commit()
+        
+        # 위험 수치를 넘었을 때만 외부 메신저(카톡/슬랙) 알림 발송
+        if payload.analysis_data.risk_score >= DANGER_THRESHOLD:
+            for mapping in connected_mappings:
+                guardian_obj = mapping.guardian
+                print(f"[Alert] 위험 감지! {guardian_obj.name} 보호자에게 알림을 발송합니다.")
+                
+                await asyncio.gather(
+                    send_emergency_alert(
+                        risk_score=payload.analysis_data.risk_score,
+                        summary=payload.analysis_data.llm_summary,
+                        text=payload.analysis_data.stt_text,
+                        dependent_name=target_name,
+                        guardian_phone=guardian_obj.phone,
+                        guardian_name=guardian_obj.name
+                    ),
+                    send_kakao_alert(
+                        guardian=guardian_obj,
+                        dependent_name=target_name,
+                        risk_score=payload.analysis_data.risk_score,
+                        summary=payload.analysis_data.llm_summary
+                    )
                 )
-            )
-        else:
-            print("[Alert Warning] 매칭된 보호자 정보가 없어 알림을 보낼 수 없습니다.")
-    
+
     return {"message": "Callback processed successfully", "job_id": job_id}

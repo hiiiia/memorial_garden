@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -11,38 +11,58 @@ def generate_uuid():
 class Guardian(Base):
     __tablename__ = "guardians"
 
-    # default=generate_uuid 추가
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
-    username = Column(String(50), unique=True, index=True)
+    username = Column(String(50), unique=True, index=True) # 새로 추가하신 컬럼
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     name = Column(String(50), nullable=False)
     phone = Column(String(20), nullable=False)
     
-    # 카카오 유저 고유 식별자 컬럼 추가 (일반 가입 유저를 위해 nullable=True)
+    # 카카오 유저 고유 식별자 및 토큰 (새로 추가하신 컬럼)
     kakao_id = Column(String(50), unique=True, index=True, nullable=True)
-    
-    # 카카오 메시지 전송을 위한 토큰 저장 컬럼
     kakao_access_token = Column(String(255), nullable=True)
     kakao_refresh_token = Column(String(255), nullable=True)
     
     created_at = Column(DateTime, server_default=func.now())
 
-    dependents = relationship("Dependent", back_populates="guardian")
+    # 1:N 직접 연결 대신, 매핑 테이블을 통한 연결
+    dependent_links = relationship("GuardianDependentMapping", back_populates="guardian", cascade="all, delete-orphan")
 
 class Dependent(Base):
     __tablename__ = "dependents"
 
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
-    guardian_id = Column(String(50), ForeignKey("guardians.id", ondelete="CASCADE"), nullable=False)
+    
+    # 어르신 독자적 앱 사용 및 검색을 위한 컬럼 유지
+    username = Column(String(50), unique=True, index=True, nullable=True)
+    hashed_password = Column(String(255), nullable=True)
+    is_searchable = Column(Boolean, default=True) 
+    
     name = Column(String(50), nullable=False)
     age = Column(Integer, nullable=False)
     device_token = Column(String(100), unique=True, index=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
-    guardian = relationship("Guardian", back_populates="dependents")
+    # 매핑 테이블 및 기존 관계 설정
+    guardian_links = relationship("GuardianDependentMapping", back_populates="dependent", cascade="all, delete-orphan")
     logs = relationship("Log", back_populates="dependent")
     alerts = relationship("Alert", back_populates="dependent")
+
+# 연동 수락/대기 상태를 관리하는 매핑 테이블
+class GuardianDependentMapping(Base):
+    __tablename__ = "guardian_dependent_mappings"
+
+    id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
+    guardian_id = Column(String(50), ForeignKey("guardians.id", ondelete="CASCADE"), nullable=False)
+    dependent_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False)
+    
+    status = Column(String(20), default="PENDING", nullable=False) # PENDING, CONNECTED, REJECTED
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    guardian = relationship("Guardian", back_populates="dependent_links")
+    dependent = relationship("Dependent", back_populates="guardian_links")
 
 class Log(Base):
     __tablename__ = "logs"
@@ -50,15 +70,17 @@ class Log(Base):
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
     dependent_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False)
     file_url = Column(String(255), nullable=False)
+    
+    # 생성된 AI 그림일기 이미지 URL 저장용
+    image_url = Column(String(500), nullable=True)
     status = Column(String(20), default="PROCESSING", nullable=False)
     
-    # String(1000) -> Text 로 변경 (길이 제한 해제)
+    # text 타입 적용 완료
     stt_text = Column(Text, nullable=True)      
     reply_text = Column(Text, nullable=True)   
-    reply_audio_url = Column(String(500), nullable=True) # TTS 연동 시 사용
+    reply_audio_url = Column(String(500), nullable=True) 
     risk_score = Column(Float, default=0.0, nullable=False)
     primary_emotion = Column(String(20), nullable=True)    
-    # LLM 요약도 혹시 길어질 수 있으니 Text로 넉넉하게 잡습니다.
     llm_summary = Column(Text, nullable=True)       
     
     created_at = Column(DateTime, server_default=func.now(), index=True)

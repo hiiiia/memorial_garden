@@ -41,7 +41,7 @@ async def send_emergency_alert(
 
     # 3. 슬랙에 보낼 메시지 폼 (channel 속성이 추가됨)
     slack_message = {
-        "channel": SLACK_CHANNEL, # 🌟 메시지를 보낼 대상 채널 ID
+        "channel": SLACK_CHANNEL, # 메시지를 보낼 대상 채널 ID
         "text": f"🚨 *[긴급 알림] {guardian_name}님, {dependent_name} 어르신의 위험 징후가 감지되었습니다!* 🚨",
         "attachments": [
             {
