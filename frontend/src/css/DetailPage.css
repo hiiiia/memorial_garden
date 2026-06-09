@@ -1,0 +1,180 @@
+/* src/pages/DetailPages.css */
+
+.detail-container {
+  min-height: 100vh;
+  background-color: #FDFBF7;
+  padding: 40px 20px;
+  font-family: sans-serif;
+  color: #333;
+}
+
+.detail-content {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.back-button {
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-bottom: 20px;
+  display: inline-block;
+}
+
+/* 카드 공통 스타일 */
+.detail-card {
+  background-color: #FFF;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  margin-bottom: 20px;
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin: 0 0 15px 0;
+  color: #111;
+}
+
+/* --- 오늘의 일기 전용 스타일 --- */
+.diary-top-section {
+  display: flex;
+  gap: 30px;
+  align-items: flex-start;
+}
+
+.diary-image {
+  width: 50%;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.diary-text-area {
+  width: 50%;
+}
+
+.diary-title {
+  font-size: 22px;
+  font-weight: bold;
+  margin: 0 0 10px 0;
+}
+
+.diary-date {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 15px;
+}
+
+.diary-body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #444;
+}
+
+.diary-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.emotion-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+/* --- 위험도 분석 전용 스타일 --- */
+.risk-top-grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 20px;
+}
+
+.risk-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.risk-score-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.risk-score {
+  font-size: 48px;
+  font-weight: bold;
+  color: #D32F2F; /* 위험도 높음 색상 */
+  margin: 10px 0;
+}
+
+.risk-badge {
+  background-color: #FFEBEE;
+  color: #D32F2F;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 15px;
+}
+
+.risk-desc {
+  font-size: 13px;
+  color: #666;
+  text-align: center;
+}
+
+.analysis-list, .action-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.analysis-item, .action-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #333;
+}
+
+.icon-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: #F0F4FF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .diary-top-section, .diary-bottom-grid, .risk-top-grid, .risk-bottom-grid {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+  .diary-image, .diary-text-area {
+    width: 100%;
+  }
+}

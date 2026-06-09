@@ -3,23 +3,11 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { config } from '../config'; // config 객체 불러오기
 
-<<<<<<< HEAD
 
-//  App.tsx에서 넘겨준 리모컨(Prop)의 타입을 정의합니다.
-interface KakaoCallbackProps {
-  setIsLoggedIn: (value: boolean) => void;
-}
-
-const KakaoCallbackPage = ({ setIsLoggedIn }: KakaoCallbackProps) => {
-=======
-// (App.tsx에서 받아온 리모컨)
-interface LoginPageProps {
-  setIsLoggedIn: (value: boolean) => void;
-}
+import { LoginPageProps } from '../types/interface';
 
 
 const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
->>>>>>> 5704f87 (fix(frontend): 카카오 로그인 유저 정보 저장 누락 및 TS 라우팅 에러 수정)
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
