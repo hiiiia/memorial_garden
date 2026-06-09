@@ -1,6 +1,6 @@
 # C:\Users\User\Documents\memorial_garden\backend\app\main.py
 import os
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,6 +8,10 @@ from core.config import settings
 from db.database import engine
 from db import models
 from sqlalchemy.exc import OperationalError
+
+from sqlalchemy.exc import OperationalError
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.response import unified_response
 from api.v1.router import api_router 
@@ -27,29 +31,44 @@ app = FastAPI(
     version=settings.PROJECT_VERSION
 )
 
-# 에러 팩토리 사용
-@app.exception_handler(HTTPException)
-async def custom_http_exception_handler(request: Request, exc: HTTPException):
+# 1. HTTP 에러 팩토리 사용 (StarletteHTTPException 사용)
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
     """
-    FastAPI에서 raise HTTPException(...) 이 발생할 때마다 
-    여기로 가로채서 우리가 만든 unified_response 규격으로 예쁘게 바꿔서 내보냅니다.
+    FastAPI에서 발생하는 모든 HTTP 에러(우리가 raise한 것 + 프레임워크 자체 에러)를
+    가로채서 unified_response 규격으로 내보냅니다.
     """
     return unified_response(
         status_code=exc.status_code,
         error=exc.detail  # 에러 메시지를 error 필드에
     )
 
-
-# API 통신(요청) 중 발생하는 DB 연결 에러 방어 (Global Exception Handler)
-@app.exception_handler(OperationalError)
-async def db_operational_error_handler(request: Request, exc: OperationalError):
-    print(f"🚨 데이터베이스 연결 오류 발생: {exc}") # 서버 콘솔용 로그
+# 2. 파라미터/바디 검증 에러 처리
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # 에러 메시지를 보기 좋게 가공 (예: "body -> user_id: 필드가 누락되었습니다.")
+    error_messages = []
+    for err in exc.errors():
+        loc = " -> ".join([str(l) for l in err["loc"]])
+        error_messages.append(f"[{loc}] {err['msg']}")
+        
     return unified_response(
-        status_code=503, # 503 Service Unavailable
-        message="데이터베이스 서버와 연결할 수 없습니다. (Timeout)",
-        data={"detail": str(exc)}
+        status_code=422,
+        error="입력값이 올바르지 않습니다.",
+        data={"validation_details": error_messages}
     )
 
+# 3. API 통신 중 발생하는 DB 연결 에러 방어
+@app.exception_handler(OperationalError)
+async def db_operational_error_handler(request: Request, exc: OperationalError):
+    # 서버 콘솔에는 상세 에러를 남겨서 디버깅이 가능하게 합니다.
+    print(f"🚨 데이터베이스 연결 오류 발생: {exc}") 
+    
+    # 클라이언트에게는 민감한 DB 정보(exc)를 숨기고 정형화된 응답만 보냅니다.
+    return unified_response(
+        status_code=503, # 503 Service Unavailable
+        error="데이터베이스 서버와 연결할 수 없거나 응답이 지연되고 있습니다."
+    )
 
 # CORS 미들웨어 설정 (반드시 app.include_router 보다 위에 작성)
 app.add_middleware(

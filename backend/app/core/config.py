@@ -18,7 +18,7 @@ class Settings:
     # DB 연결 URL 자동 조합
     DATABASE_URL: str = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-    # AI 중계 서버 주소 불러오기 ⭐️
+    # AI 중계 서버 주소 불러오기 
     AI_PROXY_URL: str = os.getenv("AI_PROXY_URL", "http://ai:8001")
 
     FRONTEND_URL :str = os.getenv("FRONTEND_URL","http://frontend:3000")

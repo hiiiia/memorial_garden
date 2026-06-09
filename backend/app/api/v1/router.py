@@ -5,6 +5,8 @@ from api.v1.callbacks import jobs
 from api.v1.files import files
 #from api.v1.utils import 
 from api.v1.auth import auth
+from api.v1.dashboard import dashboard
+from api.v1.guardians import guardians
 
 # v1 전용 통합 라우터 생성
 api_router = APIRouter()
@@ -23,3 +25,9 @@ api_router.include_router(jobs.router, prefix="/callbacks/jobs", tags=["Callback
 
 # 5. 인증 관련 라우터 (/api/v1/auth/...)
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+
+api_router.include_router(guardians.router, prefix="/guardian", tags=["Guardian"])
+
+
