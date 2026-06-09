@@ -1,0 +1,142 @@
+/* src/pages/LoginPage.css */
+
+.login-page-container {
+  min-height: 100vh;
+  background-color: #FDFBF7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: sans-serif;
+  padding: 20px;
+}
+
+.login-box {
+  width: 100%;
+  max-width: 400px;
+  background-color: #FFF;
+  border-radius: 20px;
+  padding: 40px 30px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.login-title {
+  font-size: 26px;
+  font-weight: bold;
+  color: #333;
+  margin: 0 0 10px 0;
+}
+
+.login-subtitle {
+  font-size: 14px;
+  color: #888;
+  margin: 0;
+}
+
+.error-message {
+  background-color: #FDECEA;
+  color: #E53935;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.login-input {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid #E0E0E0;
+  background-color: #FAFAFA;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.login-input:focus {
+  border-color: #7A8B5F; /* 클릭 시 초록색 테두리 */
+}
+
+.login-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-btn-normal {
+  background-color: #7A8B5F;
+  color: white;
+  margin-top: 10px;
+}
+
+.login-btn-normal:hover {
+  background-color: #65744C;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  margin: 25px 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background-color: #EEE;
+}
+
+.divider-text {
+  padding: 0 15px;
+  color: #AAA;
+  font-size: 12px;
+}
+
+.login-btn-kakao {
+  background-color: #FEE500;
+  color: #333;
+}
+
+.login-btn-kakao:hover {
+  background-color: #E6D000;
+}
+
+.kakao-icon {
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.signup-link-container {
+  margin-top: 25px;
+  text-align: center;
+  font-size: 14px;
+  color: #666;
+}
+
+.signup-link {
+  color: #7A8B5F;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.signup-link:hover {
+  text-decoration: underline;
+}

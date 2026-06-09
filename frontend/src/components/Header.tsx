@@ -2,7 +2,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-// 부모(App.tsx)로부터 받아올 데이터의 타입을 정의합니다.
 interface HeaderProps {
   isLoggedIn: boolean;
   onLogout: () => void;
@@ -11,27 +10,39 @@ interface HeaderProps {
 const Header = ({ isLoggedIn, onLogout }: HeaderProps) => {
   return (
     <header style={{ 
-      padding: '15px 20px', 
-      background: '#ffe812', 
+      padding: '15px 30px', 
+      backgroundColor: '#FDFBF7', // 따뜻한 아이보리 배경
+      borderBottom: '1px solid #EAE5D9', // 아주 연한 경계선
       display: 'flex', 
       justifyContent: 'space-between', 
       alignItems: 'center',
-      fontWeight: 'bold'
     }}>
-      {/* 로고를 누르면 메인으로 가도록 Link를 걸어줍니다 */}
-      <Link to="/" style={{ textDecoration: 'none', color: 'black' }}>
-        <div>🚀 내 프로젝트</div>
+      <Link to="/" style={{ textDecoration: 'none', color: '#7A8B5F' }}>
+        <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>
+          🌿 Memorial Garden
+        </h2>
       </Link>
       
       {isLoggedIn ? (
         <button 
           onClick={onLogout} 
-          style={{ padding: '5px 15px', cursor: 'pointer', border: 'none', background: '#333', color: 'white', borderRadius: '5px' }}
+          style={{ 
+            padding: '8px 16px', 
+            cursor: 'pointer', 
+            border: '1px solid #7A8B5F', 
+            backgroundColor: 'transparent', 
+            color: '#7A8B5F', 
+            borderRadius: '20px', // 둥근 모서리로 부드럽게
+            fontWeight: 'bold',
+            transition: 'all 0.2s' // 호버 액션을 위한 트랜지션
+          }}
+          onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f0efe9'; }}
+          onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
         >
           로그아웃
         </button>
       ) : (
-        <span style={{ fontSize: '14px', color: '#555' }}>로그인이 필요합니다</span>
+        <span style={{ fontSize: '14px', color: '#888' }}>보호자 로그인</span>
       )}
     </header>
   );
