@@ -4,6 +4,7 @@ from sqlalchemy import func
 from datetime import datetime, date as dt_date
 from typing import Optional
 from datetime import timedelta
+import calendar
 
 from api.v1.deps import get_current_user
 from db.database import get_db
@@ -279,3 +280,62 @@ def get_risk_analysis(
 
     return unified_response(status_code=200, data=analysis_data)
 
+@router.get("/{guardian_id}/diary/monthly")
+def get_monthly_diary_dates(
+    guardian_id: str,
+    user_id: str = Query(..., description="조회할 어르신의 ID"),
+    month: str = Query(..., description="조회할 연월 (예: 2026-06)"),
+    db: Session = Depends(get_db),
+    current_user: Guardian = Depends(get_current_user)
+):
+    """
+    선택한 월(YYYY-MM)에 그림일기가 작성된 날짜(YYYY-MM-DD) 목록을 반환합니다.
+    프론트엔드 달력에 '기록 있는 날' 점(Dot)을 찍기 위한 용도입니다.
+    """
+    # 1. 보호자와 어르신 간의 연동(매핑) 및 상태(CONNECTED) 확인
+    mapping = db.query(GuardianDependentMapping).filter(
+        GuardianDependentMapping.guardian_id == current_user.id,
+        GuardianDependentMapping.dependent_id == user_id,
+        GuardianDependentMapping.status == "CONNECTED"
+    ).first()
+
+    if not mapping:
+        return unified_response(
+            status_code=403,
+            error="해당 어르신에 대한 접근 권한이 없거나 아직 연동이 수락되지 않았습니다."
+        )
+
+    # 2. 조회할 월의 시작일과 종료일 계산 (예: 2026-06-01 00:00:00 ~ 2026-06-30 23:59:59)
+    try:
+        target_year, target_month = map(int, month.split('-'))
+        # calendar.monthrange는 해당 월의 (시작 요일, 말일)을 튜플로 반환합니다.
+        last_day = calendar.monthrange(target_year, target_month)[1]
+        
+        start_date = datetime(target_year, target_month, 1, 0, 0, 0)
+        end_date = datetime(target_year, target_month, last_day, 23, 59, 59)
+    except ValueError:
+        return unified_response(
+            status_code=400,
+            error="잘못된 날짜 형식입니다. YYYY-MM 형태로 입력해주세요."
+        )
+
+    # 3. Log 테이블의 created_at 컬럼을 기준으로 범위 검색
+    # (이미지가 생성된 완료 건만 점을 찍고 싶다면 Log.status == "COMPLETED" 조건을 추가해도 좋습니다)
+    logs = db.query(Log.created_at).filter(
+        Log.dependent_id == user_id,
+        Log.created_at >= start_date,
+        Log.created_at <= end_date
+    ).all()
+
+    # 4. DateTime 객체에서 'YYYY-MM-DD' 형태의 문자열만 추출 후 중복 제거
+    # logs는 [(datetime.datetime(...),), (datetime.datetime(...),)] 형태입니다.
+    written_dates = list(set([log[0].strftime("%Y-%m-%d") for log in logs if log[0]]))
+    
+    # 날짜순으로 정렬
+    written_dates.sort()
+
+    return unified_response(
+        status_code=200,
+        message="Monthly diary dates retrieved successfully.",
+        data=written_dates
+    )
