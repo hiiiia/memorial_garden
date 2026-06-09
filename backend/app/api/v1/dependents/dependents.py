@@ -16,7 +16,7 @@ class LinkRespondRequest(BaseModel):
 
 router = APIRouter()
 
-# 어르신 연동 요청 수락/거절 API
+#  어르신 연동 요청 수락/거절 API
 @router.post("/respond-link")
 def respond_link_request(
     request: LinkRespondRequest,

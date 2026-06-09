@@ -201,7 +201,7 @@ def get_diary_detail(
     ).order_by(Log.created_at.desc()).first()
 
     if not log:
-        return unified_response(status_code=404, error="해당 날짜의 일기 기록이 없습니다.")
+        return unified_response(status_code=200, message="해당 날짜의 일기 기록이 없습니다.", data=None)
 
     # 4. 데이터 가공
     # DB에 키워드 컬럼이 별도로 없다면, 임시로 감정이나 기본 키워드를 내려주거나 
@@ -339,3 +339,4 @@ def get_monthly_diary_dates(
         message="Monthly diary dates retrieved successfully.",
         data=written_dates
     )
+

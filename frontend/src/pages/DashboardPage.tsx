@@ -85,6 +85,7 @@ const DashboardPage = () => {
     }
   };
 
+
   const selectedDateStr = formatYYYYMMDD(selectedDate);
 
   // 1. 메인 상단 대시보드 API 호출
@@ -213,6 +214,45 @@ const DashboardPage = () => {
     }
   }, []);
 
+  // 4. 연동 취소 함수
+  const handleCancelRequest = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const dependentId = localStorage.getItem('dependent_id');
+
+      if (!token || !dependentId) return;
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/guardian/cancel-link/${dependentId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+
+      if (response.status === 401) {
+        alert("세션이 만료되었습니다. 다시 로그인해주세요.");
+        localStorage.clear();
+        navigate('/login');
+        return;
+      }
+
+      const result = await response.json();
+
+      if (response.ok && result.code === 200) {
+        alert("연동 요청이 취소되었습니다.");
+        localStorage.removeItem('dependent_id');
+        setPendingSenior(null);
+        window.location.reload(); // 화면 갱신
+      } else {
+        alert(result.error || "연동 취소에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("Cancel link error:", error);
+      alert("서버 통신 중 오류가 발생했습니다.");
+    }
+  };
+
   const getConditionIcon = (state: string) => state === 'good' ? '🙂' : state === 'bad' ? '😥' : '😐';
 
   if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>대시보드를 준비 중입니다...</div>;
@@ -232,14 +272,12 @@ const DashboardPage = () => {
           </p>
         </div>
         <button
-          onClick={() => {
-            localStorage.removeItem('dependent_id');
-            window.location.reload();
-          }}
+          onClick={handleCancelRequest} // 🌟 기존 로컬스토리지 삭제 로직 대신 API 호출 함수 연결
           style={{ backgroundColor: '#FFF', color: '#888', border: '1px solid #CCC', padding: '10px 20px', borderRadius: '8px', fontSize: '14px', cursor: 'pointer', transition: '0.2s' }}
         >
           요청 취소하기
         </button>
+
       </div>
     );
   }

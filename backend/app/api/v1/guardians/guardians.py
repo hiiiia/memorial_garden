@@ -65,13 +65,14 @@ def search_dependent(
     return unified_response(status_code=200, data=search_data)
 
 
-# 2. 어르신 연동 요청 API
+# 2. 보호자 > 어르신 연동 요청 API
 @router.post("/link-senior")
-def request_link_dependent(
+async def request_link_dependent(
     request: LinkRequest,
     db: Session = Depends(get_db),
     current_user: Guardian = Depends(get_current_user) # 실제 인증 로직 적용
 ):
+
     # 1. 유효한 어르신인지 다시 한번 확인
     dependent = db.query(Dependent).filter(Dependent.id == request.dependent_id).first()
     if not dependent:
@@ -105,3 +106,40 @@ def request_link_dependent(
         status_code=201, 
         message=f"{dependent.name} 어르신에게 연동 요청을 보냈습니다."
     )
+
+# 3. 연동 요청을 삭제
+@router.delete("/cancel-link/{dependent_id}")
+def cancel_link_request(
+    dependent_id: str,
+    db: Session = Depends(get_db),
+    current_user: Guardian = Depends(get_current_user)
+):
+    # 1. 현재 로그인한 보호자와 해당 어르신 간의 'PENDING(대기 중)' 상태인 매핑 기록을 찾습니다.
+    mapping = db.query(GuardianDependentMapping).filter(
+        GuardianDependentMapping.guardian_id == current_user.id,
+        GuardianDependentMapping.dependent_id == dependent_id,
+        GuardianDependentMapping.status == "PENDING"
+    ).first()
+
+    if not mapping:
+        return unified_response(
+            status_code=404, 
+            error="취소할 대기 중인 연동 요청이 존재하지 않습니다."
+        )
+
+    try:
+        # 2. DB에서 해당 매핑 기록 삭제
+        db.delete(mapping)
+        db.commit()
+
+        return unified_response(
+            status_code=200, 
+            message="연동 요청이 성공적으로 취소되었습니다."
+        )
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Cancel Link Error: {str(e)}")
+        return unified_response(
+            status_code=500, 
+            error="서버 오류로 인해 요청을 취소하지 못했습니다."
+        )
