@@ -2,13 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { config } from '../config'; // config 객체 불러오기
+
+import { LoginPageProps } from '../types/interface';
+
 import '../css/CustomCalendar.css';
 import '../css/LoginPage.css'
-
-// (App.tsx에서 받아온 리모컨)
-interface LoginPageProps {
-  setIsLoggedIn: (value: boolean) => void;
-}
 
 
 const LoginPage = ({ setIsLoggedIn }: LoginPageProps) => {

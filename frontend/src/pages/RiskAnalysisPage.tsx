@@ -2,140 +2,154 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+
+import { TrendData, AnalysisData } from '../types/interface';
+
 import { config } from '../config'; // API 주소 세팅
-import '../css/DetailPages.css';
+import '../css/DetailPage.css';
 
-// --- TypeScript 인터페이스 정의 ---
-interface RiskData {
-  current_score: number;
-  level: string;
-  description: string;
-  weekly_trend: { name: string; score: number }[];
-  ai_analysis: { icon: string; text: string; color: string }[];
-  recommended_actions: { icon: string; text: string }[];
-}
 
-const RiskAnalysisPage = () => {
+const AnalysisPage = () => {
   const navigate = useNavigate();
-  const [data, setData] = useState<RiskData | null>(null);
+  
+  // 상태 관리
+  const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchRiskAnalysis = async () => {
+    const fetchAnalysis = async () => {
       try {
         const token = localStorage.getItem('access_token');
-        if (!token) throw new Error('로그인이 필요합니다.');
+        const guardianStr = localStorage.getItem('guardian_info');
+        const dependentId = localStorage.getItem('dependent_id');
 
-        // TODO: 실제 백엔드 API 엔드포인트로 변경
-        // const response = await fetch(`${config.apiBaseUrl}/guardian/seniors/risk-analysis`, { ... });
-
-        // [임시] 백엔드가 없으므로 가짜 데이터 세팅
-        setTimeout(() => {
-          setData({
-            current_score: 72,
-            level: "높음",
-            description: "평소보다 위험도가 증가했습니다.",
-            weekly_trend: [
-              { name: '월', score: 25 }, { name: '화', score: 35 }, { name: '수', score: 35 },
-              { name: '목', score: 45 }, { name: '금', score: 68 }, { name: '토', score: 80 },
-              { name: '일', score: 72 },
-            ],
-            ai_analysis: [
-              { icon: '🔍', text: '외로움 관련 표현이 평소보다 35% 증가했어요.', color: '#42A5F5' },
-              { icon: '💤', text: '수면 관련 부정 표현이 증가했어요.', color: '#5C6BC0' },
-              { icon: '🚪', text: '사회활동 언급이 감소했어요.', color: '#AB47BC' },
-            ],
-            recommended_actions: [
-              { icon: '📞', text: '전화로 안부 확인하기' },
-              { icon: '🗓️', text: '방문 일정 조율하기' },
-              { icon: '🏥', text: '전문 상담 권장하기' },
-            ]
-          });
+        // 인증 정보 확인
+        if (!token || !guardianStr || !dependentId) {
+          setError('권한이 없거나 선택된 어르신 정보가 없습니다.');
           setIsLoading(false);
-        }, 800);
+          return;
+        }
 
-      } catch (err: any) {
-        setError(err.message || '데이터를 불러오지 못했습니다.');
+        const guardianId = JSON.parse(guardianStr).id;
+        const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+        // 백엔드 /analysis 엔드포인트 호출
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/dashboard/${guardianId}/analysis?user_id=${dependentId}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+
+        const result = await response.json();
+
+        if (response.ok && result.code === 200) {
+          setAnalysisData(result.data);
+        } else {
+          setError(result.error || '분석 데이터를 불러오지 못했습니다.');
+        }
+      } catch (err) {
+        console.error("Analysis fetch error:", err);
+        setError('서버와의 통신에 실패했습니다.');
+      } finally {
         setIsLoading(false);
       }
     };
 
-    fetchRiskAnalysis();
+    fetchAnalysis();
   }, []);
 
-  if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>위험도 데이터를 분석하는 중입니다...</div>;
-  if (error || !data) return <div style={{ padding: '50px', textAlign: 'center', color: '#E57373' }}>{error}</div>;
+  // 상태별 렌더링
+  if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>데이터를 분석 중입니다...</div>;
+  if (error) return (
+    <div style={{ padding: '50px', textAlign: 'center' }}>
+      <p style={{ color: 'red', marginBottom: '20px' }}>{error}</p>
+      <button onClick={() => navigate(-1)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CCC' }}>뒤로 가기</button>
+    </div>
+  );
+  if (!analysisData) return null;
+
+  // 평균 점수에 따른 상태 색상 및 텍스트 결정 로직
+  const isHighRisk = analysisData.average_score >= 70;
+  const isWarning = analysisData.average_score >= 35 && analysisData.average_score < 70;
+  
+  const statusColor = isHighRisk ? '#D32F2F' : isWarning ? '#FBC02D' : '#388E3C';
+  const statusLabel = isHighRisk ? '위험' : isWarning ? '주의' : '안정';
 
   return (
-    <div className="detail-container">
-      <div className="detail-content">
-        <div className="back-button" onClick={() => navigate(-1)}>
-          ← 위험도 분석
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', backgroundColor: '#FAFAFA', minHeight: '100vh' }}>
+      
+      {/* 상단 네비게이션 헤더 */}
+      <header style={{ display: 'flex', alignItems: 'center', marginBottom: '30px' }}>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#333' }}>←</button>
+        <h2 style={{ margin: '0 auto', fontSize: '18px', fontWeight: 'bold' }}>주간 위험도 분석</h2>
+        <div style={{ width: '20px' }} /> {/* 가운데 정렬용 더미 div */}
+      </header>
+
+      {/* 1. 종합 점수 요약 카드 */}
+      <div style={{ backgroundColor: '#FFF', borderRadius: '16px', padding: '24px', marginBottom: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', textAlign: 'center' }}>
+        <h3 style={{ fontSize: '15px', color: '#666', marginBottom: '10px', fontWeight: 'normal' }}>최근 7일 평균 위험도</h3>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'baseline', gap: '8px' }}>
+          <span style={{ fontSize: '42px', fontWeight: 'bold', color: statusColor }}>
+            {analysisData.average_score}
+          </span>
+          <span style={{ fontSize: '18px', color: '#888' }}>점</span>
         </div>
-
-        {/* 상단: 현재 위험도 & 차트 */}
-        <div className="risk-top-grid">
-          <div className="detail-card risk-score-box">
-            <h3 className="card-title" style={{ alignSelf: 'flex-start' }}>현재 위험도</h3>
-            <div className="risk-score" style={{ color: data.current_score >= 70 ? '#D32F2F' : '#388E3C' }}>
-              {data.current_score}점
-            </div>
-            <div className="risk-badge" style={{ 
-              backgroundColor: data.current_score >= 70 ? '#FFEBEE' : '#E8F5E9',
-              color: data.current_score >= 70 ? '#D32F2F' : '#388E3C' 
-            }}>
-              {data.level}
-            </div>
-            <p className="risk-desc">{data.description}</p>
-          </div>
-
-          <div className="detail-card">
-            <h3 className="card-title">최근 7일 위험도 변화</h3>
-            <div style={{ width: '100%', height: '200px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data.weekly_trend} margin={{ top: 15, right: 20, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EEE" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="score" stroke="#D32F2F" strokeWidth={2} dot={{ r: 4, strokeWidth: 2, fill: '#FFF' }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* 하단: 분석 결과 & 추천 행동 */}
-        <div className="risk-bottom-grid">
-          <div className="detail-card">
-            <h3 className="card-title">AI 분석 결과</h3>
-            <ul className="analysis-list">
-              {data.ai_analysis.map((item, idx) => (
-                <li key={idx} className="analysis-item">
-                  <div className="icon-circle" style={{ color: item.color }}>{item.icon}</div>
-                  {item.text}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="detail-card">
-            <h3 className="card-title">추천 행동</h3>
-            <ul className="action-list">
-              {data.recommended_actions.map((action, idx) => (
-                <li key={idx} className="action-item">
-                  <div className="icon-circle" style={{ backgroundColor: '#F3E5F5', color: '#8E24AA' }}>{action.icon}</div>
-                  {action.text}
-                </li>
-              ))}
-            </ul>
-          </div>
+        <div style={{ marginTop: '10px', display: 'inline-block', backgroundColor: `${statusColor}15`, color: statusColor, padding: '6px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 'bold' }}>
+          현재 상태: {statusLabel}
         </div>
       </div>
+
+      {/* 2. 주간 꺾은선 차트 영역 (Recharts 활용) */}
+      <div style={{ backgroundColor: '#FFF', borderRadius: '16px', padding: '24px 15px', marginBottom: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+        <h3 style={{ fontSize: '16px', color: '#333', marginBottom: '20px', paddingLeft: '10px' }}>📊 위험도 추이</h3>
+        <div style={{ width: '100%', height: '250px' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={analysisData.trend_data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EEE" />
+              <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#888' }} axisLine={false} tickLine={false} dy={10} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: '#888' }} axisLine={false} tickLine={false} />
+              <Tooltip 
+                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+                formatter={(value: any) => [`${value}점`, '위험도']}
+                labelStyle={{ color: '#888', marginBottom: '5px' }}
+              />
+              {/* 위험 기준선 (70점) */}
+              <ReferenceLine y={70} stroke="#D32F2F" strokeDasharray="3 3" label={{ position: 'top', value: '위험 기준', fill: '#D32F2F', fontSize: 10 }} />
+              
+              <Line 
+                type="monotone" 
+                dataKey="score" 
+                stroke="#7A8B5F" 
+                strokeWidth={3}
+                dot={{ r: 4, fill: '#7A8B5F', strokeWidth: 2, stroke: '#FFF' }}
+                activeDot={{ r: 6 }}
+                animationDuration={1000}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 3. 주치의 AI 소견 영역 */}
+      <div style={{ backgroundColor: '#F0F4E8', borderRadius: '16px', padding: '24px', border: '1px solid #E1E8D5' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+          <span style={{ fontSize: '20px' }}>👨‍⚕️</span>
+          <h3 style={{ fontSize: '16px', color: '#333', margin: 0 }}>AI 주치의 종합 소견</h3>
+        </div>
+        <p style={{ fontSize: '15px', lineHeight: '1.6', color: '#4A4A4A', margin: 0, wordBreak: 'keep-all' }}>
+          {analysisData.insight}
+        </p>
+      </div>
+
     </div>
   );
 };
 
-export default RiskAnalysisPage;
+export default AnalysisPage;

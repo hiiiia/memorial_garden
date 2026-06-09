@@ -3,10 +3,8 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { config } from '../config'; // config 객체 불러오기
 
-// (App.tsx에서 받아온 리모컨)
-interface LoginPageProps {
-  setIsLoggedIn: (value: boolean) => void;
-}
+
+import { LoginPageProps } from '../types/interface';
 
 
 const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
