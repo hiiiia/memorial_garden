@@ -37,7 +37,7 @@ const AnalysisPage = () => {
 
         // 백엔드 /analysis 엔드포인트 호출
         const response = await fetch(
-          `${API_BASE_URL}/api/v1/dashboard/${guardianId}/analysis?user_id=${dependentId}`,
+          `${API_BASE_URL}/api/v1/dashboard/analysis?user_id=${dependentId}`,
           {
             method: 'GET',
             headers: {
@@ -137,11 +137,11 @@ const AnalysisPage = () => {
         </div>
       </div>
 
-      {/* 3. 주치의 AI 소견 영역 */}
+      {/* 3. 소견 영역 */}
       <div style={{ backgroundColor: '#F0F4E8', borderRadius: '16px', padding: '24px', border: '1px solid #E1E8D5' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
           <span style={{ fontSize: '20px' }}>👨‍⚕️</span>
-          <h3 style={{ fontSize: '16px', color: '#333', margin: 0 }}>AI 주치의 종합 소견</h3>
+          <h3 style={{ fontSize: '16px', color: '#333', margin: 0 }}>종합 소견</h3>
         </div>
         <p style={{ fontSize: '15px', lineHeight: '1.6', color: '#4A4A4A', margin: 0, wordBreak: 'keep-all' }}>
           {analysisData.insight}

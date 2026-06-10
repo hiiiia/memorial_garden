@@ -38,7 +38,7 @@ const DiaryPage = () => {
 
         // 백엔드 /diary 엔드포인트 호출
         const response = await fetch(
-          `${API_BASE_URL}/api/v1/dashboard/${guardianId}/diary?user_id=${dependentId}&date=${targetDate}`,
+          `${API_BASE_URL}/api/v1/dashboard/diary?user_id=${dependentId}&date=${targetDate}`,
           {
             method: 'GET',
             headers: {

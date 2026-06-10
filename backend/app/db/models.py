@@ -79,15 +79,24 @@ class Log(Base):
     stt_text = Column(Text, nullable=True)      
     reply_text = Column(Text, nullable=True)   
     reply_audio_url = Column(String(500), nullable=True) 
+    
+    # 건강 지표 세분화 점수
     risk_score = Column(Float, default=0.0, nullable=False)
+    depression_score = Column(Float, default=0.0, nullable=False)        # 추가!
+    cognitive_decline_score = Column(Float, default=0.0, nullable=False) # 추가!
+    
     primary_emotion = Column(String(20), nullable=True)    
     llm_summary = Column(Text, nullable=True)       
+    
+    # 프론트엔드 달력 UI용 텍스트 및 해시태그
+    diary_text = Column(Text, nullable=True) # 추가! (동화풍 그림일기 본문)
+    keywords = Column(Text, nullable=True)   # 추가! (해시태그 - 콤마로 구분하여 저장)
     
     created_at = Column(DateTime, server_default=func.now(), index=True)
 
     dependent = relationship("Dependent", back_populates="logs")
     alerts = relationship("Alert", back_populates="log")
-
+    
 class Alert(Base):
     __tablename__ = "alerts"
 

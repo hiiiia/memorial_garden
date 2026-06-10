@@ -53,7 +53,7 @@ const LoginPage = ({ setIsLoggedIn }: LoginPageProps) => {
         setErrorMsg(data.error || '로그인에 실패했습니다.');
       }
     } catch (err) {
-      setErrorMsg('서버와 연결할 수 없습니다. 백엔드가 켜져 있는지 확인해주세요.');
+      setErrorMsg('서버와 연결할 수 없습니다.');
     }
   };
 

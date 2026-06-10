@@ -60,7 +60,7 @@ const MainPage = () => {
         if (activeTab === 'diary') {
           // 선택한 날짜의 그림일기 조회
           const response = await fetch(
-            `${API_BASE_URL}/api/v1/dashboard/${guardianId}/diary?user_id=${dependentId}&date=${selectedDateStr}`,
+            `${API_BASE_URL}/api/v1/dashboard／diary?user_id=${dependentId}&date=${selectedDateStr}`,
             { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } }
           );
 
@@ -81,7 +81,7 @@ const MainPage = () => {
         } else if (activeTab === 'report') {
           // 위험도 분석 조회
           const response = await fetch(
-            `${API_BASE_URL}/api/v1/dashboard/${guardianId}/analysis?user_id=${dependentId}`,
+            `${API_BASE_URL}/api/v1/dashboard/analysis?user_id=${dependentId}`,
             { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } }
           );
           const result = await response.json();
@@ -119,7 +119,7 @@ const MainPage = () => {
       const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
       const response = await fetch(
-        `${API_BASE_URL}/api/v1/dashboard/${guardianId}/diary/monthly?user_id=${dependentId}&month=${yearMonth}`,
+        `${API_BASE_URL}/api/v1/dashboard／diary/monthly?user_id=${dependentId}&month=${yearMonth}`,
         {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}` }

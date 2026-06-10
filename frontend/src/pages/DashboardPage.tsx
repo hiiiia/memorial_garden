@@ -55,14 +55,14 @@ const DashboardPage = () => {
       const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
       const response = await fetch(
-        `${API_BASE_URL}/api/v1/dashboard/${guardianId}/diary/monthly?user_id=${dependentId}&month=${yearMonth}`,
+        `${API_BASE_URL}/api/v1/dashboard/diary/monthly?user_id=${dependentId}&month=${yearMonth}`,
         {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${token}` }
         }
       );
 
-      // 🌟 1. JSON 변환 전 401 에러(세션 만료) 최우선 체크
+      // 1. JSON 변환 전 401 에러(세션 만료) 최우선 체크
       if (response.status === 401) {
         alert("세션이 만료되었습니다. 다시 로그인해주세요.");
         localStorage.clear();
@@ -75,9 +75,18 @@ const DashboardPage = () => {
 
       // 3. 백엔드에서 넘겨준 날짜 배열 저장 (예: ["2026-06-03", "2026-06-05"])
       if (response.ok && result.code === 200) {
-        setMarkedDates(result.data || []);
+        if (result.data && result.data.diary_list) {
+          // 새로운 백엔드 포맷: diary_list 배열 안의 객체들에서 date 값만 쏙쏙 뽑아냄
+          const datesOnly = result.data.diary_list.map((diary: any) => diary.date);
+          setMarkedDates(datesOnly);
+        } else if (Array.isArray(result.data)) {
+          // 혹시라도 예전 API가 응답할 경우를 대비한 방어 코드
+          setMarkedDates(result.data);
+        } else {
+          setMarkedDates([]);
+        }
       } else {
-        setMarkedDates([]); // 에러나 데이터가 없을 경우 배열 비우기
+        setMarkedDates([]);
       }
     } catch (err) {
       console.error("Monthly records fetch error:", err);
@@ -111,7 +120,7 @@ const DashboardPage = () => {
         const guardianId = JSON.parse(guardianStr).id;
 
         const response = await fetch(
-          `${API_BASE_URL}/api/v1/dashboard/${guardianId}/dashboard?user_id=${dependentId}`,
+          `${API_BASE_URL}/api/v1/dashboard?user_id=${dependentId}`,
           {
             method: 'GET',
             headers: {
@@ -172,7 +181,7 @@ const DashboardPage = () => {
         if (activeTab === 'diary') {
           // 선택한 날짜의 그림일기 조회
           const response = await fetch(
-            `${API_BASE_URL}/api/v1/dashboard/${guardianId}/diary?user_id=${dependentId}&date=${selectedDateStr}`,
+            `${API_BASE_URL}/api/v1/dashboard/diary?user_id=${dependentId}&date=${selectedDateStr}`,
             { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } }
           );
           const result = await response.json();
@@ -183,7 +192,7 @@ const DashboardPage = () => {
         } else if (activeTab === 'report') {
           // 위험도 분석 조회 (주간 데이터 반환)
           const response = await fetch(
-            `${API_BASE_URL}/api/v1/dashboard/${guardianId}/analysis?user_id=${dependentId}`,
+            `${API_BASE_URL}/api/v1/dashboard/analysis?user_id=${dependentId}`,
             { method: 'GET', headers: { 'Authorization': `Bearer ${token}` } }
           );
           const result = await response.json();
@@ -442,7 +451,7 @@ const DashboardPage = () => {
                     </div>
                   </div>
                   <div className="insight-box">
-                    <p className="insight-text"><strong>💡 주치의 AI 소견:</strong><br />{analysisData.insight}</p>
+                    <p className="insight-text"><strong>💡 소견:</strong><br />{analysisData.insight}</p>
                   </div>
                   <div className="view-detail-link">7일간 추이 차트 자세히 보기 →</div>
                 </div>

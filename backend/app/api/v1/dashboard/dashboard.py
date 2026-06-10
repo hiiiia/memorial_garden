@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Query, Path, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from datetime import datetime, date as dt_date
-from typing import Optional
-from datetime import timedelta
+from sqlalchemy import func, extract
+from datetime import datetime, date as dt_date, timedelta
 import calendar
+from typing import Optional
 
+# 기존 임포트 경로 유지
 from api.v1.deps import get_current_user
 from db.database import get_db
 from db.models import Guardian, Dependent, GuardianDependentMapping, Log, Alert
@@ -13,28 +13,30 @@ from core.response import unified_response
 
 router = APIRouter()
 
-@router.get("/{guardian_id}/dashboard")
+# ==========================================
+# 1. 보호자 메인 대시보드 요약 정보 조회
+# ==========================================
+@router.get("")
 def get_guardian_dashboard(
-    guardian_id: str = Path(..., description="보호자 고유 ID"),
     user_id: str = Query(..., description="어르신 고유 ID"),
     date: Optional[str] = Query(None, description="조회 기준 날짜 (ISO String 또는 YYYY-MM-DD)"),
     current_user: Guardian = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # 1. 권한 체크
-    if str(current_user.id) != guardian_id:
-        return unified_response(status_code=403, error="Permission denied.")
-
-    # 2. 보호자-어르신 연동 관계 및 상태 확인
+    """
+    [로그인 전용] 현재 대화 상태, 위험도 점수 및 실시간 최근 알림 3개를 결합한 메인 대시보드 데이터를 반환합니다.
+    URL에서 guardian_id를 제거하고 토큰 기반으로 검증하여 안전합니다.
+    """
+    # 1. 보호자-어르신 연동 관계 및 상태 확인
     mapping = db.query(GuardianDependentMapping).filter(
-        GuardianDependentMapping.guardian_id == guardian_id,
+        GuardianDependentMapping.guardian_id == current_user.id,
         GuardianDependentMapping.dependent_id == user_id
     ).first()
 
     if not mapping:
-        return unified_response(status_code=404, error="연동 정보가 존재하지 않습니다. 어르신을 먼저 등록해주세요.")
+        raise HTTPException(status_code=404, detail="연동 정보가 존재하지 않습니다. 어르신을 먼저 등록해주세요.")
 
-    # 어르신 측 수락 대기 상태(PENDING) 예외 처리
+    # 어르신 측 수락 대기 상태(PENDING) 처리 - 프론트엔드 명세에 맞춤
     if mapping.status == "PENDING":
         dependent = db.query(Dependent).filter(Dependent.id == user_id).first()
         return unified_response(
@@ -47,14 +49,14 @@ def get_guardian_dashboard(
         )
 
     if mapping.status == "REJECTED":
-        return unified_response(status_code=400, error="어르신에 의해 연동 요청이 거절되었습니다.")
+        raise HTTPException(status_code=400, detail="어르신에 의해 연동 요청이 거절되었습니다.")
 
-    # 3. 어르신 정보 조회
+    # 2. 어르신 정보 조회
     dependent = db.query(Dependent).filter(Dependent.id == user_id).first()
     if not dependent:
-        return unified_response(status_code=404, error="어르신 정보를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="어르신 정보를 찾을 수 없습니다.")
 
-    # 4. 날짜 파싱 및 해당 날짜의 최신 로그(Log) 조회
+    # 3. 날짜 파싱 및 해당 날짜의 최신 로그(Log) 조회
     if date:
         try:
             target_date = datetime.fromisoformat(date.replace("Z", "")).date()
@@ -65,10 +67,11 @@ def get_guardian_dashboard(
 
     latest_log = db.query(Log).filter(
         Log.dependent_id == user_id,
+        Log.status == "COMPLETED",
         func.date(Log.created_at) == target_date
     ).order_by(Log.created_at.desc()).first()
 
-    # 5. 프론트엔드 포맷 초기화 (기본값 설정)
+    # 4. 프론트엔드 포맷 초기화 (기본값 설정)
     state = "good"
     label = "안정"
     description = "오늘 진행된 대화가 없거나 특이사항이 없습니다."
@@ -80,7 +83,7 @@ def get_guardian_dashboard(
     duration_label = "라즈베리파이 연결 상태를 확인하세요."
 
     if latest_log:
-        risk_score = int(latest_log.risk_score)
+        risk_score = int((latest_log.risk_score or 0) * 100) if latest_log.risk_score <= 1.0 else int(latest_log.risk_score)
         
         if risk_score >= 70:
             state = "bad"
@@ -102,13 +105,12 @@ def get_guardian_dashboard(
         time_label = f"오늘 {formatted_time.replace('AM', '오전').replace('PM', '오후')}"
         duration_label = "AI와 대화 완료"
 
-    # 6. [실데이터 연동] Alert 테이블에서 최근 알림 데이터 3개 조회
+    # 5. Alert 테이블에서 최근 알림 데이터 3개 조회
     db_alerts = db.query(Alert).filter(
         Alert.dependent_id == user_id
     ).order_by(Alert.created_at.desc()).limit(3).all()
 
     recent_alerts = []
-    # 데이터베이스의 알림 타입을 프론트엔드 UI 컴포넌트 형식 명세로 변환
     trigger_type_map = {
         "AI_RISK": {"content": "위험도 기복이 감지되었습니다.", "type": "warning"},
         "EMERGENCY": {"content": "어르신의 도움 요청이 접수되었습니다.", "type": "warning"},
@@ -116,13 +118,11 @@ def get_guardian_dashboard(
     }
 
     for idx, alert in enumerate(db_alerts, start=1):
-        # 맵에 정의되지 않은 타입일 경우 기본 포맷팅 처리
         alert_spec = trigger_type_map.get(
             alert.trigger_type, 
             {"content": f"알림이 발생했습니다. ({alert.trigger_type})", "type": "info"}
         )
         
-        # 일기가 공유된 특수 케이스에 대한 유연한 메시지 분기 처리
         content = alert_spec["content"]
         if alert.trigger_type == "AI_RISK" and alert.status == "RESOLVED":
             content = "오늘 일기가 안정적으로 공유되었습니다."
@@ -135,7 +135,6 @@ def get_guardian_dashboard(
             "type": alert_spec["type"]
         })
 
-    # 대화 기록이 아예 없고 생성된 알림도 없는 경우를 위한 최소 방어선 구축
     if not recent_alerts:
         recent_alerts.append({
             "id": 1,
@@ -144,7 +143,7 @@ def get_guardian_dashboard(
             "type": "success"
         })
 
-    # 7. 최종 데이터 결합
+    # 6. 최종 대시보드 데이터 결합 및 반환
     dashboard_data = {
         "guardian_name": current_user.name if current_user.name else "가족",
         "senior": {
@@ -176,101 +175,129 @@ def get_guardian_dashboard(
     )
 
 
-@router.get("/{guardian_id}/diary")
+# ==========================================
+# 2. 특정 날짜의 그림일기 상세 조회
+# ==========================================
+@router.get("/diary")
 def get_diary_detail(
-    guardian_id: str = Path(..., description="보호자 고유 ID"),
     user_id: str = Query(..., description="어르신 고유 ID"),
     date: str = Query(..., description="조회 기준 날짜 (YYYY-MM-DD)"),
     current_user: Guardian = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # 1. 권한 검증
-    if str(current_user.id) != guardian_id:
-        return unified_response(status_code=403, error="접근 권한이 없습니다.")
+    """
+    [로그인 전용] 특정 날짜를 클릭했을 때 대화 원본 스크립트와 AI 소견, 그림일기를 상세 조회합니다.
+    """
+    # 1. 권한 검증 (매핑 확인)
+    mapping = db.query(GuardianDependentMapping).filter(
+        GuardianDependentMapping.guardian_id == current_user.id,
+        GuardianDependentMapping.dependent_id == user_id,
+        GuardianDependentMapping.status == "CONNECTED"
+    ).first()
+
+    if not mapping:
+        raise HTTPException(status_code=403, detail="접근 권한이 없거나 연동 완료 상태가 아닙니다.")
 
     # 2. 날짜 파싱
     try:
         target_date = datetime.strptime(date[:10], "%Y-%m-%d").date()
     except ValueError:
-        return unified_response(status_code=400, error="잘못된 날짜 형식입니다. (YYYY-MM-DD)")
+        raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. (YYYY-MM-DD)")
 
-    # 3. 해당 날짜의 최신 로그 조회
+    # 3. 해당 날짜의 최신 완료 로그 조회
     log = db.query(Log).filter(
         Log.dependent_id == user_id,
+        Log.status == "COMPLETED",
         func.date(Log.created_at) == target_date
     ).order_by(Log.created_at.desc()).first()
 
     if not log:
         return unified_response(status_code=200, message="해당 날짜의 일기 기록이 없습니다.", data=None)
 
-    # 4. 데이터 가공
-    # DB에 키워드 컬럼이 별도로 없다면, 임시로 감정이나 기본 키워드를 내려주거나 
-    # 추후 LLM 요약 시 키워드를 JSON 형태로 저장하도록 개선할 수 있습니다.
+    # 4. 해시태그(Keywords) 파싱 로직
+    kw_list = []
+    if log.keywords:
+        kw_list = [k.strip() for k in log.keywords.split(",") if k.strip()]
+    else:
+        kw_list = ["일상", log.primary_emotion or "평온"]
+
+    # 5. 새로 추가된 DB 명세 기반 데이터 매핑
     diary_data = {
         "log_id": log.id,
         "date": target_date.strftime("%Y-%m-%d"),
-        "image_url": log.file_url if log.file_url else "기본_이미지_URL", 
-        "primary_emotion": log.primary_emotion or "알 수 없음",
-        "stt_text": log.stt_text,       # 어르신이 하신 말씀
-        "reply_text": log.reply_text,   # AI의 답변
-        "summary": log.llm_summary,     # AI 전체 요약
-        "keywords": ["대화", log.primary_emotion] if log.primary_emotion else ["일상"]
+        "image_url": log.image_url if log.image_url else "https://via.placeholder.com/800x400?text=No+Image", 
+        "primary_emotion": log.primary_emotion or "보통",
+        "stt_text": log.stt_text,       # 어르신 발화
+        "reply_text": log.reply_text,   # AI 답변
+        "diary_text": log.diary_text or log.llm_summary, # 동화풍 그림일기 내용 본문
+        "summary": log.llm_summary,     # 임상 분석용 내부 요약
+        "keywords": kw_list
     }
 
     return unified_response(status_code=200, data=diary_data)
 
-@router.get("/{guardian_id}/analysis")
+
+# ==========================================
+# 3. 최근 7일간 마음 건강 주간 위험도 분석 조회
+# ==========================================
+@router.get("/analysis")
 def get_risk_analysis(
-    guardian_id: str = Path(..., description="보호자 고유 ID"),
     user_id: str = Query(..., description="어르신 고유 ID"),
     db: Session = Depends(get_db),
     current_user: Guardian = Depends(get_current_user)
 ):
-    if str(current_user.id) != guardian_id:
-        return unified_response(status_code=403, error="접근 권한이 없습니다.")
+    """
+    [로그인 전용] 보호자 페이지의 꺾은선 차트 연동용 API입니다. 일주일간의 추세를 계산합니다.
+    """
+    mapping = db.query(GuardianDependentMapping).filter(
+        GuardianDependentMapping.guardian_id == current_user.id,
+        GuardianDependentMapping.dependent_id == user_id
+    ).first()
+
+    if not mapping:
+        raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
 
     # 최근 7일 기간 설정
     end_date = dt_date.today()
     start_date = end_date - timedelta(days=6)
 
-    # 최근 7일 치의 로그 데이터 조회 (날짜별로 오름차순)
     logs = db.query(Log).filter(
         Log.dependent_id == user_id,
+        Log.status == "COMPLETED",
         func.date(Log.created_at) >= start_date,
         func.date(Log.created_at) <= end_date
     ).order_by(Log.created_at.asc()).all()
 
-    # 프론트엔드 차트용 데이터 조립
-    # 날짜별로 그룹화하여 가장 높은 점수 또는 최신 점수를 가져오는 로직 (여기서는 단순 반복 처리)
+    # 뼈대 생성 (공백 방지)
     trend_data = []
     current_date = start_date
-
-    # 7일 치 빈 데이터 뼈대 만들기 (기록이 없는 날도 차트에 빈 구간으로 표시하기 위함)
     date_map = {}
+    
     while current_date <= end_date:
-        date_map[current_date.strftime("%m.%d")] = 0.0 # 기본 점수 0
+        date_map[current_date.strftime("%m.%d")] = 0.0
         current_date += timedelta(days=1)
 
-    # 실제 DB 로그 점수로 덮어쓰기 (하루에 여러 번 대화했다면 마지막 대화 점수로 덮어씌워짐)
+    # 실제 DB 로그 점수로 오버라이드
     for log in logs:
         log_date_str = log.created_at.strftime("%m.%d")
-        date_map[log_date_str] = log.risk_score
+        # 0.0~1.0 범위를 100점 만점으로 변환하여 차트에 대응
+        raw_score = log.risk_score or 0.0
+        date_map[log_date_str] = int(raw_score * 100) if raw_score <= 1.0 else int(raw_score)
 
-    # 차트에 넣기 좋은 리스트 형태로 변환
     for date_str, score in date_map.items():
         trend_data.append({
             "date": date_str,
             "score": score
         })
 
-    # AI 주치의 소견 생성 (간단한 룰베이스 예시)
+    # 종합 평균 기반 규칙 주치의 소견 생성
     avg_score = sum(date_map.values()) / 7 if sum(date_map.values()) > 0 else 0
-    if avg_score >= 50:
-        insight = "최근 일주일간 우울감 또는 인지 저하 징후 수치가 높게 유지되고 있습니다. 각별한 주의와 안부 전화가 필요합니다."
-    elif avg_score >= 20:
-        insight = "전반적으로 안정적이나, 간헐적으로 감정 기복이 관찰됩니다."
+    if avg_score >= 60:
+        insight = "최근 일주일간 마음 불안정 및 인지 기복 수치가 다소 높게 관찰됩니다. 오늘 저녁에는 따뜻한 안부 전화를 드려 심리적 안정감을 높여주시는 것을 권장합니다."
+    elif avg_score >= 30:
+        insight = "전반적으로 규칙적인 생활 패턴을 유지하고 계시나, 간헐적인 감정 기복이 파악됩니다."
     else:
-        insight = "최근 일주일 대비 발화 속도와 어휘 다양성이 매우 안정적입니다."
+        insight = "어르신의 발화 어휘 다양성과 감정 상태가 정서적으로 매우 안정된 이상적인 곡선을 유지하고 있습니다."
 
     analysis_data = {
         "trend_data": trend_data,
@@ -280,19 +307,22 @@ def get_risk_analysis(
 
     return unified_response(status_code=200, data=analysis_data)
 
-@router.get("/{guardian_id}/diary/monthly")
-def get_monthly_diary_dates(
-    guardian_id: str,
+
+# ==========================================
+# 4. 리액트 달력 UI 전용 월별 데이터 일괄 조회
+# ==========================================
+@router.get("/diary/monthly")
+def get_monthly_diary_payload(
     user_id: str = Query(..., description="조회할 어르신의 ID"),
     month: str = Query(..., description="조회할 연월 (예: 2026-06)"),
     db: Session = Depends(get_db),
     current_user: Guardian = Depends(get_current_user)
 ):
     """
-    선택한 월(YYYY-MM)에 그림일기가 작성된 날짜(YYYY-MM-DD) 목록을 반환합니다.
-    프론트엔드 달력에 '기록 있는 날' 점(Dot)을 찍기 위한 용도입니다.
+    [달력 전용 핵심 API] 선택한 연월(YYYY-MM)의 전체 완료 일기와 건강 보고서를 통째로 긁어옵니다.
+    프론트엔드 달력의 점(Dot) 마킹 및 일기장/건강 탭 스위칭 컴포넌트 데이터 공급을 단 한 번의 호출로 해결합니다.
     """
-    # 1. 보호자와 어르신 간의 연동(매핑) 및 상태(CONNECTED) 확인
+    # 1. 권한 검증
     mapping = db.query(GuardianDependentMapping).filter(
         GuardianDependentMapping.guardian_id == current_user.id,
         GuardianDependentMapping.dependent_id == user_id,
@@ -300,43 +330,68 @@ def get_monthly_diary_dates(
     ).first()
 
     if not mapping:
-        return unified_response(
-            status_code=403,
-            error="해당 어르신에 대한 접근 권한이 없거나 아직 연동이 수락되지 않았습니다."
-        )
+        raise HTTPException(status_code=403, detail="해당 어르신에 대한 접근 권한이 없거나 연동이 수락되지 않았습니다.")
 
-    # 2. 조회할 월의 시작일과 종료일 계산 (예: 2026-06-01 00:00:00 ~ 2026-06-30 23:59:59)
+    # 2. 조회할 월의 경계값 계산
     try:
         target_year, target_month = map(int, month.split('-'))
-        # calendar.monthrange는 해당 월의 (시작 요일, 말일)을 튜플로 반환합니다.
         last_day = calendar.monthrange(target_year, target_month)[1]
         
         start_date = datetime(target_year, target_month, 1, 0, 0, 0)
         end_date = datetime(target_year, target_month, last_day, 23, 59, 59)
     except ValueError:
-        return unified_response(
-            status_code=400,
-            error="잘못된 날짜 형식입니다. YYYY-MM 형태로 입력해주세요."
-        )
+        raise HTTPException(status_code=400, detail="잘못된 날짜 형식입니다. YYYY-MM 형태로 입력해주세요.")
 
-    # 3. Log 테이블의 created_at 컬럼을 기준으로 범위 검색
-    # (이미지가 생성된 완료 건만 점을 찍고 싶다면 Log.status == "COMPLETED" 조건을 추가해도 좋습니다)
-    logs = db.query(Log.created_at).filter(
+    # 3. 한 달치 데이터 일괄 쿼리
+    logs = db.query(Log).filter(
         Log.dependent_id == user_id,
+        Log.status == "COMPLETED",
         Log.created_at >= start_date,
         Log.created_at <= end_date
-    ).all()
+    ).order_by(Log.created_at.asc()).all()
 
-    # 4. DateTime 객체에서 'YYYY-MM-DD' 형태의 문자열만 추출 후 중복 제거
-    # logs는 [(datetime.datetime(...),), (datetime.datetime(...),)] 형태입니다.
-    written_dates = list(set([log[0].strftime("%Y-%m-%d") for log in logs if log[0]]))
-    
-    # 날짜순으로 정렬
-    written_dates.sort()
+    # 4. 프론트엔드 달력 상태(`MainPage.tsx`)에 정확히 호환되도록 포맷팅
+    diary_list = []
+    health_list = []
 
+    for log in logs:
+        # 리액트 달력 매칭용 YYYY-MM-DD 포맷팅
+        log_date_str = log.created_at.strftime("%Y-%m-%d")
+
+        # 해시태그 가공
+        kw_list = []
+        if log.keywords:
+            kw_list = [k.strip() for k in log.keywords.split(",") if k.strip()]
+        else:
+            kw_list = ["일상", log.primary_emotion or "안정"]
+
+        # 📖 1. 일기 탭 데이터 적재
+        diary_list.append({
+            "id": log.id,
+            "date": log_date_str,
+            "imageUrl": log.image_url or "https://via.placeholder.com/800x400?text=No+Image",
+            "content": log.diary_text or log.llm_summary or "기록된 일기가 없습니다.",
+            "keywords": kw_list
+        })
+
+        # 🩺 2. 건강 보고서 탭 데이터 적재 (Float 점수 -> 0~100 정수 스케일링 적용)
+        raw_dep = log.depression_score or 0.0
+        raw_cog = log.cognitive_decline_score or 0.0
+
+        health_list.append({
+            "id": log.id,
+            "date": log_date_str,
+            "depressionScore": int(raw_dep * 100) if raw_dep <= 1.0 else int(raw_dep),
+            "dementiaScore": int(raw_cog * 100) if raw_cog <= 1.0 else int(raw_cog),
+            "insight": log.reply_text or log.llm_summary or "안정적인 대화 패턴이 유지되고 있습니다."
+        })
+
+    # 5. 완성된 월간 패키지 응답 반환
     return unified_response(
         status_code=200,
-        message="Monthly diary dates retrieved successfully.",
-        data=written_dates
+        message="Monthly calendar package retrieved successfully.",
+        data={
+            "diary_list": diary_list,
+            "health_list": health_list
+        }
     )
-
