@@ -94,8 +94,8 @@ class Log(Base):
     keywords = Column(Text, nullable=True)   # 추가! (해시태그 - 콤마로 구분하여 저장)
     
     # 어르신 장기 기억(RAG)용 벡터 컬럼
-    # 구글 text-embedding-004 모델의 출력 차원인 768에 맞춤
-    vector_embedding = Column(Vector(768), nullable=True)
+    # 구글 gemini-embedding-2 모델의 출력 차원인 3072에 맞춤
+    vector_embedding = Column(Vector(3072), nullable=True)
     
     created_at = Column(DateTime, server_default=func.now(), index=True)
 

@@ -5,9 +5,10 @@ import os
 import json
 import asyncio
 
-from google import genai
-from google.genai import types
+# from google import genai
+# from google.genai import types
 
+from openai import OpenAI
 
 from app.config import settings
 from app.utils.backup import save_failed_callback_to_local
@@ -17,11 +18,14 @@ app = FastAPI()
 # ==========================================
 # 1. 환경 변수 및 Gemini 클라이언트 설정
 # ==========================================
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 AI_SECRET_TOKEN = os.getenv("AI_SECRET_TOKEN", "my_super_secret_ai_token")
 
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
+client = OpenAI(
+    base_url="http://codu.ddns.net:11434/v1",
+    api_key="ollama"
+)
+
 
 # ==========================================
 # 2. 데이터 스키마 및 보안 의존성 정의

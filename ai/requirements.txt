@@ -2,5 +2,6 @@ fastapi
 uvicorn
 requests
 google-genai
+openai
 httpx
 pydantic-settings
