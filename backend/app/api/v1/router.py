@@ -7,6 +7,7 @@ from api.v1.files import files
 from api.v1.auth import auth
 from api.v1.dashboard import dashboard
 from api.v1.guardians import guardians
+from api.v1.memory import rag
 
 # v1 전용 통합 라우터 생성
 api_router = APIRouter()
@@ -30,4 +31,5 @@ api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboar
 
 api_router.include_router(guardians.router, prefix="/guardian", tags=["Guardian"])
 
-
+# RAG 라우터
+api_router.include_router(rag.router, prefix="/memory", tags=["Memory"])
