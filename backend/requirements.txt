@@ -3,6 +3,7 @@ uvicorn
 sqlalchemy
 #pymysql
 psycopg2-binary
+pgvector
 httpx
 python-multipart
 cryptography

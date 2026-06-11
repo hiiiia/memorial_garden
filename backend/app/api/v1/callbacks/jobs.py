@@ -16,6 +16,8 @@ from db import models
 from core.config import settings
 from api.v1.utils.notifier import send_emergency_alert, send_kakao_alert
 from api.v1.utils.security import verify_ai_token
+from core.response import unified_response
+
 
 router = APIRouter()
 
@@ -27,6 +29,7 @@ class AnalysisData(BaseModel):
     reply_text: str
     stt_text : str
     image_url: str = None # AI가 생성한 그림일기 URL 추가
+    vector_embedding: list[float]  = None
 
 class CallbackRequest(BaseModel):
     user_id: str
@@ -131,6 +134,10 @@ async def receive_ai_callback(
         # 그림일기 이미지가 생성되어 넘어왔다면 저장
         if payload.analysis_data.image_url:
             log_record.image_url = payload.analysis_data.image_url
+        
+        # RAG 벡터 저장
+        if payload.analysis_data.vector_embedding:
+            log_record.vector_embedding = payload.analysis_data.vector_embedding
             
         # TTS 생성 및 파일 경로 저장
         if payload.analysis_data.reply_text:
@@ -198,4 +205,10 @@ async def receive_ai_callback(
                     )
                 )
 
-    return {"message": "Callback processed successfully", "job_id": job_id}
+    return unified_response(
+        status_code= 200,
+        message="데이터 저장 완료",
+        data={
+            "job_id" : job_id
+        }
+    )
