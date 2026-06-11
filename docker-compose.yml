@@ -32,6 +32,8 @@ services:
       - .env
     networks:
       - platform-network
+    # AI 모델 로딩으로 인해 메모리 부족(OOM)으로 꺼질 경우 자동 재시작
+    restart: unless-stopped
 
   # 3. 프론트엔드 개발 환경
   frontend:
@@ -59,6 +61,8 @@ services:
     tty: true
     networks:
       - platform-network
+    depends_on:
+      - backend  # 백엔드가 뜬 후 실행
 
 networks:
   platform-network:
