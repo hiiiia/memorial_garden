@@ -1,21 +1,34 @@
 from openai import OpenAI
+import base64
+
+
+
+# response = client.chat.completions.create(
+#     model="gemma4:12b",
+#     messages=[
+#         {"role": "system", "content": "상황에 맞는 이미지를 생성하세요"},
+#         {"role" : "user", "content" : "따뜻하고 화사한 햇살이 비치는 푸른 동네 뒷산 산책로를 걷고 있는 노인의 뒷모습. 마음속으로 떠올리는 듯, 어린아이와 손을 잡고 다정하게 산을 오르는 옛 추억의 실루엣이 부드럽고 따뜻한 수채화 톤으로 표현된 일러스트."}
+#     ],
+# )
 
 client = OpenAI(
     base_url="http://codu.ddns.net:11434/v1",
     api_key="ollama"
-)
-
-response = client.chat.completions.create(
+ )
+prompt_text = "따뜻하고 화사한 햇살이 비치는 푸른 동네 뒷산 산책로를 걷고 있는 노인의 뒷모습. 마음속으로 떠올리는 듯, 어린아이와 손을 잡고 다정하게 산을 오르는 옛 추억의 실루엣이 부드럽고 따뜻한 수채화 톤으로 표현된 일러스트."
+response = client.responses.create(
     model="gemma4:12b",
-    messages=[
-        {"role":"user","content":"안녕"}
-    ]
-)
+    input=prompt_text  # Pass the string directly
+ )
 
-print(response.choices[0].message.content)
+try:
+    print(type(response)) #Check the type of response
+    print("=================================")
+    print(response.__dict__) # print the content of object to see what is inside.
 
-
-
+except Exception as e :
+    print("Error while printing response:",e)
+     
 # import os
 # import certifi
 # import asyncio

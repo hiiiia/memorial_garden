@@ -4,12 +4,15 @@ import httpx
 import os
 import json
 import asyncio
+import subprocess
+import urllib.parse
+import numpy as np
 
-# from google import genai
-# from google.genai import types
+# 1. openai-whisper 대신 faster-whisper 임포트
+#import whisper
+from faster_whisper import WhisperModel
 
 from openai import OpenAI
-
 from app.config import settings
 from app.utils.backup import save_failed_callback_to_local
 
@@ -20,12 +23,20 @@ app = FastAPI()
 # ==========================================
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 AI_SECRET_TOKEN = os.getenv("AI_SECRET_TOKEN", "my_super_secret_ai_token")
+HF_TOKEN = os.getenv("HF_TOKEN", "default-token")
 
 client = OpenAI(
     base_url="http://codu.ddns.net:11434/v1",
     api_key="ollama"
 )
+LLM_MODEL = "gemma4:12b"
+EMBEDDING_MODEL = "nomic-embed-text"
 
+# print("🎙️ Whisper STT 모델 로딩 중... (서버 시작 시 1회만 실행)")
+# whisper_model = whisper.load_model("base")
+print("🎙️ Faster-Whisper STT 모델 로딩 중...")
+# int8(8비트) 양자화 옵션 적용
+whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
 
 # ==========================================
 # 2. 데이터 스키마 및 보안 의존성 정의
@@ -86,47 +97,108 @@ async def send_failed_callback(callback_url: str, user_id: str, headers: dict, e
             error_reason=f"FAILED 콜백 송신 실패: {str(callback_err)}"
         )
 
+# ==========================================
+# [STT 추출] FFmpeg 제어 로직
+# ==========================================
+def extract_audio_with_ffmpeg(file_path: str, target_sr: int = 16000) -> np.ndarray:
+    print(f"\n[FFmpeg] 🎬 오디오 추출 시작: {file_path}")
+    
+    command = [
+        "ffmpeg",               # apt-get으로 설치했으므로 글로벌 명령어 사용
+        "-i", file_path,
+        "-f", "f32le",
+        "-ac", "1",
+        "-ar", str(target_sr),
+        "-loglevel", "quiet",
+        "-"
+    ]
+    
+    try:
+        out, _ = subprocess.Popen(command, stdout=subprocess.PIPE).communicate()
+    except FileNotFoundError:
+        raise RuntimeError("[FFmpeg Error] 컨테이너 내부에 ffmpeg가 설치되어 있지 않습니다.")
+    except Exception as e:
+        raise RuntimeError(f"[FFmpeg Error] 실행 중 예외 발생: {e}")
+        
+    return np.frombuffer(out, np.float32).flatten()
 
 # ==========================================
-# 이미지 생성 함수 (재시도 로직 포함)
+# [무료 이미지 생성] Pollinations.ai 연동 (재시도 로직 포함)
 # ==========================================
 async def generate_diary_image(image_prompt: str, job_id: str, max_retries: int = 3, base_delay: int = 5) -> str:
     if not image_prompt:
         return ""
 
-    print("\n[AI Image] 그림일기 이미지 생성 시작")
-    print(f"[AI Image] image_prompt: {image_prompt}")
+    print("\n[AI Image] 🎨 Pollinations API로 그림일기 이미지 생성 요청 중...")
+    enhanced_prompt = f"{image_prompt}, watercolor style, warm colors, fairy tale illustration"
+    encoded_prompt = urllib.parse.quote(enhanced_prompt)
+    api_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
+
+    save_dir = "/app/uploads/diary_images"
+    os.makedirs(save_dir, exist_ok=True)
+    file_name = f"diary_{job_id}.png"
+    save_path = os.path.join(save_dir, file_name)
 
     for attempt in range(1, max_retries + 1):
         try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash-image",
-                contents=[image_prompt]
-            )
+            async with httpx.AsyncClient() as http_client:
+                response = await http_client.get(api_url, timeout=60.0)
+                response.raise_for_status()
 
-            save_dir = "/app/uploads/diary_images"
-            os.makedirs(save_dir, exist_ok=True)
+                with open(save_path, "wb") as f:
+                    f.write(response.content)
 
-            file_name = f"diary_{job_id}.png"
-            save_path = os.path.join(save_dir, file_name)
-
-            for part in response.parts:
-                if part.inline_data is not None:
-                    image = part.as_image()
-                    image.save(save_path)
-                    image_url = f"http://localhost:8000/static/diary_images/{file_name}"
-                    print(f"[AI Image] ✅ 이미지 저장 완료: {save_path}")
-                    return image_url
-
-            raise ValueError("응답에 이미지 데이터가 없습니다.")
+            image_url = f"http://localhost:8000/static/diary_images/{file_name}"
+            print(f"[AI Image] ✅ 그림일기 저장 완료: {save_path}")
+            return image_url
 
         except Exception as e:
-            print(f"[AI Image Error] 이미지 생성 실패 (시도 {attempt}): {str(e)}")
+            print(f"[AI Image Error] 이미지 다운로드 실패 (시도 {attempt}): {str(e)}")
             if attempt < max_retries:
                 await asyncio.sleep(base_delay * attempt)
             else:
-                print(f"[AI Image Critical Error] 그림일기 이미지 생성 최대 재시도({max_retries}회) 초과.")
-                return "" # 실패 시 빈 문자열 반환
+                return ""
+
+# # ==========================================
+# # 이미지 생성 함수 (재시도 로직 포함)
+# # ==========================================
+# async def generate_diary_image(image_prompt: str, job_id: str, max_retries: int = 3, base_delay: int = 5) -> str:
+#     if not image_prompt:
+#         return ""
+
+#     print("\n[AI Image] 그림일기 이미지 생성 시작")
+#     print(f"[AI Image] image_prompt: {image_prompt}")
+
+#     for attempt in range(1, max_retries + 1):
+#         try:
+#             response = client.models.generate_content(
+#                 model="gemini-2.5-flash-image",
+#                 contents=[image_prompt]
+#             )
+
+#             save_dir = "/app/uploads/diary_images"
+#             os.makedirs(save_dir, exist_ok=True)
+
+#             file_name = f"diary_{job_id}.png"
+#             save_path = os.path.join(save_dir, file_name)
+
+#             for part in response.parts:
+#                 if part.inline_data is not None:
+#                     image = part.as_image()
+#                     image.save(save_path)
+#                     image_url = f"http://localhost:8000/static/diary_images/{file_name}"
+#                     print(f"[AI Image] ✅ 이미지 저장 완료: {save_path}")
+#                     return image_url
+
+#             raise ValueError("응답에 이미지 데이터가 없습니다.")
+
+#         except Exception as e:
+#             print(f"[AI Image Error] 이미지 생성 실패 (시도 {attempt}): {str(e)}")
+#             if attempt < max_retries:
+#                 await asyncio.sleep(base_delay * attempt)
+#             else:
+#                 print(f"[AI Image Critical Error] 그림일기 이미지 생성 최대 재시도({max_retries}회) 초과.")
+#                 return "" # 실패 시 빈 문자열 반환
 
 
 # ==========================================
@@ -147,57 +219,46 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
 
     analysis_result = None
 
-    print("\n[AI] === Gemini 분석 작업 시작 ===")
-    
-    try:
-        audio_file = client.files.upload(file=file_path)
-    except Exception as upload_err:
-        print(f"[AI Fatal Error] 음성 파일 업로드 실패: {upload_err}")
-        # 파일 업로드 에러 코드 전송
-        await send_failed_callback(callback_url, user_id, headers, "UPLOAD_FAILED", str(upload_err), job_id)
-        return
+    print(f"\n[AI] === {LLM_MODEL} 파이프라인 시작 ===")
     
     # ---------------------------------------------------------
-    # [Phase 0] STT 추출 및 RAG 과거 기억 검색
+    # [Phase 0] FFmpeg + Whisper STT & RAG 검색
     # ---------------------------------------------------------
+    
     print("\n[AI] 🔍 과거 기억 검색을 위한 사전 STT 추출 시작...")
+    
     quick_stt_text = ""
-    query_vector = []
     past_memories = []
-
+    
     try:
-        # 1. 메인 분석 전, 음성에서 텍스트만 빠르게 추출
-        stt_res = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=[audio_file, "이 음성에서 들리는 사용자의 말을 있는 그대로 텍스트로만 적어주세요. 다른 설명은 절대 추가하지 마세요."]
-        )
-        quick_stt_text = stt_res.text.strip()
-        print(f"[AI STT 추출] {quick_stt_text}")
+        audio_array = extract_audio_with_ffmpeg(file_path)
+        
+        #result = whisper_model.transcribe(audio_array)
+        #quick_stt_text = result.get("text", "").strip()
+        # ================================================
+        # Faster-Whisper는 텍스트 덩어리(segments)를 순차적으로 뱉어내므로 하나로 합쳐줍니다.
+        segments, info = whisper_model.transcribe(audio_array, beam_size=5, language="ko")
+        quick_stt_text = " ".join([segment.text for segment in segments]).strip()
+        
+        print(f"[AI STT 결과] {quick_stt_text}")
 
         if quick_stt_text:
-            # 2. 추출된 텍스트를 검색용 768차원 벡터로 변환
-            embed_res = client.models.embed_content(
-                model="gemini-embedding-2",
-                contents=quick_stt_text
-            )
-            query_vector = embed_res.embeddings[0].values
+            embed_res = client.embeddings.create(model=EMBEDDING_MODEL, input=quick_stt_text)
+            query_vector = embed_res.data[0].embedding
             
-            # 3. httpx를 이용해 백엔드에 비동기 검색 요청 (POST)
             print("[AI] 🔍 백엔드 DB에서 관련된 과거 기억 조회 중...")
+            
             async with httpx.AsyncClient() as http_client:
                 search_res = await http_client.post(
-                    f"{BACKEND_URL}/api/v1/memory/{user_id}/search",
+                    f"{BACKEND_URL}/api/v1/memory/search/{user_id}",
                     json={"query_vector": query_vector, "limit": 3},
                     headers=headers
                 )
                 if search_res.status_code == 200:
                     past_memories = search_res.json().get("memories", [])
                     print(f"[AI] ✅ 관련된 과거 기억 {len(past_memories)}개 발견!")
-                else:
-                    print(f"[AI Warning] 백엔드 검색 API 에러: {search_res.status_code}")
-
     except Exception as e:
-        print(f"[AI Warning] RAG 검색 파이프라인 에러 (기억 없이 진행): {e}")
+        print(f"[AI Warning] STT/RAG 에러 (기억 없이 진행): {e}")
 
     # 찾아온 과거 기억을 하나의 문자열로 포매팅
     memory_context = "\n- ".join(past_memories) if past_memories else "이전 대화와 관련된 특별한 기억이 없습니다."
@@ -322,85 +383,30 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 JSON 외의 문장은 절대 출력하지 마세요.
             """
             
-            response = client.models.generate_content(
-                model="gemini-3.5-flash",
-                contents=[audio_file, prompt],
-                config=types.GenerateContentConfig(response_mime_type="application/json")
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant. Output only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"}
             )
             
-            #     ## 2026/05/29v.
-            #     # ai-1  | [AI] === 내 API 키로 사용 가능한 모델 목록 ===
-            #     # ai-1  |  - models/gemini-2.5-flash
-            #     # ai-1  |  - models/gemini-2.5-pro
-            #     # ai-1  |  - models/gemini-2.0-flash
-            #     # ai-1  |  - models/gemini-2.0-flash-001
-            #     # ai-1  |  - models/gemini-2.0-flash-lite-001
-            #     # ai-1  |  - models/gemini-2.0-flash-lite
-            #     # ai-1  |  - models/gemini-2.5-flash-preview-tts
-            #     # ai-1  |  - models/gemini-2.5-pro-preview-tts
-            #     # ai-1  |  - models/gemma-4-26b-a4b-it
-            #     # ai-1  |  - models/gemma-4-31b-it
-            #     # ai-1  |  - models/gemini-flash-latest
-            #     # ai-1  |  - models/gemini-flash-lite-latest
-            #     # ai-1  |  - models/gemini-pro-latest
-            #     # ai-1  |  - models/gemini-2.5-flash-lite
-            #     # ai-1  |  - models/gemini-2.5-flash-image
-            #     # ai-1  |  - models/gemini-3-pro-preview
-            #     # ai-1  |  - models/gemini-3-flash-preview
-            #     # ai-1  |  - models/gemini-3.1-pro-preview
-            #     # ai-1  |  - models/gemini-3.1-pro-preview-customtools
-            #     # ai-1  |  - models/gemini-3.1-flash-lite-preview
-            #     # ai-1  |  - models/gemini-3.1-flash-lite
-            #     # ai-1  |  - models/gemini-3-pro-image-preview
-            #     # ai-1  |  - models/gemini-3-pro-image
-            #     # ai-1  |  - models/nano-banana-pro-preview
-            #     # ai-1  |  - models/gemini-3.1-flash-image-preview
-            #     # ai-1  |  - models/gemini-3.1-flash-image
-            #     # ai-1  |  - models/gemini-3.5-flash
-            #     # ai-1  |  - models/lyria-3-clip-preview
-            #     # ai-1  |  - models/lyria-3-pro-preview
-            #     # ai-1  |  - models/gemini-3.1-flash-tts-preview
-            #     # ai-1  |  - models/gemini-robotics-er-1.5-preview
-            #     # ai-1  |  - models/gemini-robotics-er-1.6-preview
-            #     # ai-1  |  - models/gemini-2.5-computer-use-preview-10-2025
-            #     # ai-1  |  - models/antigravity-preview-05-2026
-            #     # ai-1  |  - models/deep-research-max-preview-04-2026
-            #     # ai-1  |  - models/deep-research-preview-04-2026
-            #     # ai-1  |  - models/deep-research-pro-preview-12-2025
-            #     # ai-1  |  - models/gemini-embedding-001
-            #     # ai-1  |  - models/gemini-embedding-2-preview
-            #     # ai-1  |  - models/gemini-embedding-2
-            #     # ai-1  |  - models/aqa
-            #     # ai-1  |  - models/imagen-4.0-generate-001
-            #     # ai-1  |  - models/imagen-4.0-ultra-generate-001
-            #     # ai-1  |  - models/imagen-4.0-fast-generate-001
-            #     # ai-1  |  - models/veo-2.0-generate-001
-            #     # ai-1  |  - models/veo-3.0-generate-001
-            #     # ai-1  |  - models/veo-3.0-fast-generate-001
-            #     # ai-1  |  - models/veo-3.1-generate-preview
-            #     # ai-1  |  - models/veo-3.1-fast-generate-preview
-            #     # ai-1  |  - models/veo-3.1-lite-generate-preview
-            #     # ai-1  |  - models/gemini-2.5-flash-native-audio-latest
-            #     # ai-1  |  - models/gemini-2.5-flash-native-audio-preview-09-2025
-            #     # ai-1  |  - models/gemini-2.5-flash-native-audio-preview-12-2025
-            #     # ai-1  |  - models/gemini-3.1-flash-live-preview
-            #     # ai-1  | =============================================
-
-
             try:
-                analysis_result = json.loads(response.text)
+                analysis_result = json.loads(response.choices[0].message.content)
             except json.JSONDecodeError as json_err:
                 raise json_err
 
-            print("[AI] ✅ Gemini 분석 성공!")
+            print("[AI] ✅ 분석 성공!")
+            print(json.dumps(analysis_result, indent=2, ensure_ascii=False))
             break
 
         except Exception as e:
-            print(f"[AI Warning] Gemini 분석 실패: {str(e)}")
+            print(f"[AI Warning] 분석 실패: {str(e)}")
             if attempt < max_retries:
                 await asyncio.sleep(base_delay * attempt)
             else:
-                print(f"\n[AI Critical Error] Gemini 분석 최대 재시도 초과.")
+                print(f"\n[AI Critical Error] AI 분석 최대 재시도 초과.")
                 # LLM 분석 실패 에러 코드 전송
                 await send_failed_callback(callback_url, user_id, headers, "LLM_ANALYSIS_FAILED", "텍스트 분석 응답 오류", job_id)
                 return
@@ -414,10 +420,7 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
     if llm_summary:
         try:
             print("\n[AI] 🧠 요약 텍스트를 벡터로 변환 중 (장기 기억 저장용)...")
-            save_embed = client.models.embed_content(
-                model="gemini-embedding-2",
-                contents=llm_summary
-            )
+            save_embed = client.embeddings.create(model=EMBEDDING_MODEL, input=llm_summary)
             vector_embedding = save_embed.embeddings[0].values
             print("[AI] ✅ 저장용 벡터 변환 완료!")
         except Exception as e:
@@ -431,12 +434,10 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
     image_url = ""
 
     if image_prompt:
-        image_url = await generate_diary_image(
-            image_prompt=image_prompt,
-            job_id=job_id,
-            max_retries=max_retries,
-            base_delay=base_delay
-        )
+        
+        print("[AI] : 그림일기 이미지 생성 중...")
+        
+        image_url = image_url = await generate_diary_image(image_prompt, job_id, max_retries, base_delay)
         
         # 이미지를 생성해야 하는데 결과가 빈 문자열(실패)로 돌아온 경우
         if not image_url:
@@ -465,7 +466,7 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             "depression_score": float(analysis_result.get("depression_score", 0.0)),
             "cognitive_decline_score": float(analysis_result.get("cognitive_decline_score", 0.0)),
             "care_level": analysis_result.get("care_level", "NORMAL"),
-            "vector_embedding": vector_embedding # PostgreSQL에 저장할 기억 메모리 / 768차원 배열
+            "vector_embedding": vector_embedding # PostgreSQL에 저장할 기억 메모리
         }
     }
 
