@@ -12,6 +12,7 @@ from core.storage import save_file_and_get_url
 from core.response import unified_response
 from db.database import get_db, SessionLocal
 from db import models
+from api.v1.utils.memory_profile import build_memory_profile_context
 
 router = APIRouter()
 
@@ -107,10 +108,21 @@ class AnalysisJobRequest(BaseModel):
     file_url: str
     job_id: str
 
+def get_memory_profile_context(user_id: str):
+    db = SessionLocal()
+    try:
+        return build_memory_profile_context(db, user_id)
+    except Exception as e:
+        print(f"[Backend] 장기기억 프로필 조회 실패: {str(e)}")
+        return []
+    finally:
+        db.close()
+
 # AI 서버로 분석 요청을 파이프라이닝하는 비동기 워커 태스크
 async def forward_to_ai_server(payload: dict):
     ai_target_url = f"{settings.AI_PROXY_URL}/api/v1/analyze"
     callback_url = f"http://backend:8000/api/v1/callbacks/jobs/{payload['job_id']}/analyzing-result"
+    memory_profile_context = get_memory_profile_context(payload["user_id"])
 
     async with httpx.AsyncClient() as client:
         try:
@@ -122,7 +134,8 @@ async def forward_to_ai_server(payload: dict):
                     "job_id": payload["job_id"], 
                     "user_id": payload["user_id"], 
                     "file_path": payload["file_url"], 
-                    "callback_url": callback_url
+                    "callback_url": callback_url,
+                    "memory_profile_context": memory_profile_context
                 },
                 headers={
                     "Authorization": f"Bearer {settings.AI_SECRET_TOKEN}", 

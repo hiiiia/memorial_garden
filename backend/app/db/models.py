@@ -47,6 +47,8 @@ class Dependent(Base):
     guardian_links = relationship("GuardianDependentMapping", back_populates="dependent", cascade="all, delete-orphan")
     logs = relationship("Log", back_populates="dependent")
     alerts = relationship("Alert", back_populates="dependent")
+    memory_profiles = relationship("MemoryProfile", back_populates="dependent")
+    memory_conflicts = relationship("MemoryConflict", back_populates="dependent")
 
 # 연동 수락/대기 상태를 관리하는 매핑 테이블
 class GuardianDependentMapping(Base):
@@ -111,3 +113,39 @@ class Alert(Base):
 
     dependent = relationship("Dependent", back_populates="alerts")
     log = relationship("Log", back_populates="alerts")
+
+class MemoryProfile(Base):
+    __tablename__ = "memory_profiles"
+
+    id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
+    user_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False, index=True)
+    category = Column(String(50), nullable=False, index=True)
+    key = Column(String(100), nullable=False, index=True)
+    value = Column(Text, nullable=False)
+    confidence = Column(Float, default=0.0, nullable=False)
+    importance = Column(String(20), default="MEDIUM", nullable=False)
+    source_text = Column(Text, nullable=True)
+    first_seen_at = Column(DateTime, server_default=func.now(), nullable=False)
+    last_seen_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    seen_count = Column(Integer, default=1, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    dependent = relationship("Dependent", back_populates="memory_profiles")
+
+class MemoryConflict(Base):
+    __tablename__ = "memory_conflicts"
+
+    id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
+    user_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False, index=True)
+    category = Column(String(50), nullable=False, index=True)
+    key = Column(String(100), nullable=False, index=True)
+    previous_value = Column(Text, nullable=False)
+    current_value = Column(Text, nullable=False)
+    source_text = Column(Text, nullable=True)
+    severity = Column(String(20), default="WATCH", nullable=False)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    dependent = relationship("Dependent", back_populates="memory_conflicts")

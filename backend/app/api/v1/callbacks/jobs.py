@@ -1,12 +1,13 @@
 # backend\app\api\v1\callbacks\jobs.py
 from fastapi import APIRouter, Header, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 import os
 import httpx
 import aiofiles
 import asyncio
 from datetime import datetime
+from typing import List, Optional
 
 # openAPI TTS 사용시 edge-tts는 주석처리
 import edge_tts
@@ -16,17 +17,41 @@ from db import models
 from core.config import settings
 from api.v1.utils.notifier import send_emergency_alert, send_kakao_alert
 from api.v1.utils.security import verify_ai_token
+from api.v1.utils.memory_profile import save_memory_analysis
 
 router = APIRouter()
 
 # --- 1. Pydantic 스키마 정의 ---
+class MemoryProfileUpdate(BaseModel):
+    category: str
+    key: str
+    value: str
+    confidence: float = 0.0
+    source_text: Optional[str] = None
+    importance: str = "MEDIUM"
+
+class MemoryConflictItem(BaseModel):
+    category: str
+    key: str
+    previous_value: str
+    current_value: str
+    source_text: Optional[str] = None
+    severity: str = "WATCH"
+    note: Optional[str] = None
+
 class AnalysisData(BaseModel):
-    risk_score: float
-    primary_emotion: str
-    llm_summary: str
-    reply_text: str
-    stt_text : str
-    image_url: str = None # AI가 생성한 그림일기 URL 추가
+    risk_score: float = 0.0
+    primary_emotion: str = "neutral"
+    llm_summary: str = ""
+    reply_text: str = ""
+    stt_text : str = ""
+    image_url: Optional[str] = None # AI가 생성한 그림일기 URL 추가
+    depression_score: float = 0.0
+    cognitive_decline_score: float = 0.0
+    care_level: str = "NORMAL"
+    diary_text: str = ""
+    memory_profile_updates: List[MemoryProfileUpdate] = Field(default_factory=list)
+    memory_conflicts: List[MemoryConflictItem] = Field(default_factory=list)
 
 class CallbackRequest(BaseModel):
     user_id: str
@@ -127,6 +152,20 @@ async def receive_ai_callback(
         log_record.llm_summary = payload.analysis_data.llm_summary
         log_record.reply_text = payload.analysis_data.reply_text
         log_record.stt_text = payload.analysis_data.stt_text
+        log_record.depression_score = payload.analysis_data.depression_score
+        log_record.cognitive_decline_score = payload.analysis_data.cognitive_decline_score
+        log_record.diary_text = payload.analysis_data.diary_text or payload.analysis_data.llm_summary
+        save_memory_analysis(
+            db=db,
+            user_id=payload.user_id,
+            updates=payload.analysis_data.memory_profile_updates,
+            conflicts=payload.analysis_data.memory_conflicts
+        )
+        print(
+            "[Backend] memory_profile_updates="
+            f"{len(payload.analysis_data.memory_profile_updates)}, "
+            f"memory_conflicts={len(payload.analysis_data.memory_conflicts)}"
+        )
         
         # 그림일기 이미지가 생성되어 넘어왔다면 저장
         if payload.analysis_data.image_url:

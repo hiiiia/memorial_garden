@@ -1,9 +1,10 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, status, Header, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import httpx
 import os
 import json
 import asyncio
+from typing import Any, Dict, List
 
 from google import genai
 from google.genai import types
@@ -31,6 +32,7 @@ class AnalysisTriggerRequest(BaseModel):
     user_id: str
     file_path: str
     callback_url: str
+    memory_profile_context: List[Dict[str, Any]] = Field(default_factory=list)
 
 def verify_api_token(authorization: str = Header(None)):
     if not authorization:
@@ -59,7 +61,13 @@ async def send_failed_callback(callback_url: str, user_id: str, headers: dict, e
             "llm_summary": f"[{error_code}] {error_msg}",
             "reply_text": "죄송합니다. 서버 문제로 분석을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
             "stt_text": "",
-            "image_url": ""            # 백엔드 명세에 맞춤
+            "image_url": "",           # 백엔드 명세에 맞춤
+            "depression_score": 0.0,
+            "cognitive_decline_score": 0.0,
+            "care_level": "NORMAL",
+            "diary_text": "",
+            "memory_profile_updates": [],
+            "memory_conflicts": []
         }
     }
 
@@ -127,7 +135,7 @@ async def generate_diary_image(image_prompt: str, job_id: str, max_retries: int 
 # ==========================================
 # 3. 메인 분석 파이프라인
 # ==========================================
-async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, callback_url: str):
+async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, callback_url: str, memory_profile_context=None):
     if not os.path.exists(file_path):
         print(f"[AI Error] 파일을 찾을 수 없습니다: {file_path}")
         return
@@ -141,6 +149,8 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
     }
 
     analysis_result = None
+    memory_profile_context = memory_profile_context or []
+    memory_profile_context_json = json.dumps(memory_profile_context, ensure_ascii=False)
 
     print("\n[AI] === Gemini 분석 작업 시작 ===")
     
@@ -185,7 +195,9 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 "diary_text": "",
                 "image_prompt": "",
                 "care_level": "NORMAL",
-                "reply_text": ""
+                "reply_text": "",
+                "memory_profile_updates": [],
+                "memory_conflicts": []
                 }
                 [점수 규칙]
                 - 모든 score는 0.0 ~ 1.0 범위
@@ -262,7 +274,48 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 - life_log는 테스트 내용을 간단히 기록
                 - diary_text는 테스트 기록 수준으로 짧게 작성
                 - image_prompt는 빈 문자열로 반환
+                - memory_profile_updates는 []
+                - memory_conflicts는 []
                 - 과도한 해석 금지
+                JSON 외의 문장은 절대 출력하지 마세요.
+            """
+            prompt += f"""
+
+                [기존 장기기억 프로필]
+                아래는 백엔드 DB에 저장된 사용자별 장기기억 프로필입니다.
+                현재 발화와 비교하여 반복되는 정보, 새로 발견된 정보, 충돌하는 정보가 있는지 판단하세요.
+                {memory_profile_context_json}
+
+                [장기기억 추출 규칙]
+                - 장기적으로 의미 있는 정보만 memory_profile_updates에 추출하세요.
+                - 저장할 정보: 가족 관계와 이름, 자주 언급되는 장소, 과거 직업, 반복되는 추억, 생활 패턴, 정서 변화, 건강/인지 관련 단서.
+                - 저장하지 않을 정보: 단순 인사, 의미 없는 테스트 발화, 오늘 날씨 같은 일회성 정보, 확신이 낮은 추측, 실제 발화에 없는 상상 정보.
+                - confidence가 낮거나 실제 발화 근거가 약하면 memory_profile_updates에 넣지 마세요.
+                - 기존 장기기억 프로필과 현재 발화가 충돌하면 memory_conflicts에 기록하세요.
+                - memory_conflicts가 있으면 cognitive_decline_score와 care_level 판단에 참고하세요.
+                - 우울감과 고립감은 depression_score 하나로 통합해서 판단하고 별도의 고립감 점수 필드는 출력하지 마세요.
+
+                [memory_profile_updates 형식]
+                {{
+                  "category": "family",
+                  "key": "아들 이름",
+                  "value": "김개똥",
+                  "confidence": 0.9,
+                  "source_text": "우리 아들 김개똥이가 서울에서 살아.",
+                  "importance": "HIGH"
+                }}
+
+                [memory_conflicts 형식]
+                {{
+                  "category": "family",
+                  "key": "아들 이름",
+                  "previous_value": "김개똥",
+                  "current_value": "박길동",
+                  "source_text": "오늘 아들 박길동이가 왔어.",
+                  "severity": "WATCH",
+                  "note": "가족 구성원 이름 혼동 가능성"
+                }}
+
                 JSON 외의 문장은 절대 출력하지 마세요.
             """
             
@@ -389,9 +442,13 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             "image_url": image_url, 
             "depression_score": float(analysis_result.get("depression_score", 0.0)),
             "cognitive_decline_score": float(analysis_result.get("cognitive_decline_score", 0.0)),
-            "care_level": analysis_result.get("care_level", "NORMAL")
+            "care_level": analysis_result.get("care_level", "NORMAL"),
+            "diary_text": analysis_result.get("diary_text", ""),
+            "memory_profile_updates": analysis_result.get("memory_profile_updates", []),
+            "memory_conflicts": analysis_result.get("memory_conflicts", [])
         }
     }
+    print(f"[AI] callback_body: {json.dumps(callback_body, ensure_ascii=False)}")
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -434,6 +491,7 @@ async def trigger_analysis(
         job_id=request.job_id,
         user_id=request.user_id,
         file_path=request.file_path,
-        callback_url=request.callback_url
+        callback_url=request.callback_url,
+        memory_profile_context=request.memory_profile_context
     )
     return {"message": "Analysis started in background."}
