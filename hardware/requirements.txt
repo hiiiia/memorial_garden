@@ -1,2 +1,4 @@
 PyAudio
 RPi.GPIO
+pyserial
+requests
