@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import '../css/ElderPage.css';
 
-type Screen = 'home' | 'talk' | 'ai';
+type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'send' | 'finish';
 
 const ElderPage = () => {
   const [screen, setScreen] = useState<Screen>('home');
@@ -76,11 +76,65 @@ const ElderPage = () => {
             <div className="voice-wave">▂▃▅▆▇▆▅▃▂▃▅▆▇▆▅</div>
             <p className="listening-text">말씀을 듣고 있어요...</p>
 
-            <button className="stop-btn" onClick={() => setScreen('home')}>
-            ■ 그만하기
+            <button className="stop-btn" onClick={() => setScreen('diary')}>
+                ■ 그만하기
             </button>
         </div>
-        )}
+      )}
+      {screen === 'diary' && (
+        <div className="home-card diary-card">
+          <h1 className="diary-title">오늘의 일기</h1>
+
+          <div className="diary-content">
+            <div className="diary-image">
+              시장 그림
+            </div>
+
+            <div className="diary-text-box">
+              오늘은 시장에 다녀왔어요.<br />
+              채소도 사고 친구도 만나서<br />
+              즐거웠어요.
+            </div>
+          </div>
+
+          <div className="diary-buttons">
+            <button className="diary-listen-btn">🔊 다시듣기</button>
+            <button className="diary-next-btn" onClick={() => setScreen('send')}>
+              ➡ 다음
+            </button>
+          </div>
+        </div>
+      )}
+      {screen === 'send' && (
+        <div className="home-card send-card">
+          <h1 className="send-title">가족에게 보내기</h1>
+
+          <div className="send-content">
+
+            <div className="send-left">
+              <div className="send-envelope">💌</div>
+
+              <p className="send-question">
+                가족에게 오늘의 이야기를<br />
+                보내시겠어요?
+              </p>
+            </div>
+
+            <div className="send-buttons">
+              <button className="send-main-btn">
+                ✉ 보내기
+              </button>
+
+              <button
+                className="send-stop-btn"
+                onClick={() => setScreen('home')}
+              >
+                ■ 그만하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
