@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # 1. 파이썬 하드웨어 제어 에이전트 (오디오, GPIO, 로컬 웹소켓)
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: aicare_agent
+    
+    # [중요] 라즈베리 파이의 오디오(마이크) 장치 권한을 도커 내부로 연결
+    devices:
+      - "/dev/snd:/dev/snd"
+      
+    # [중요] GPIO 제어(rpi-lgpio 등)를 위해 하드웨어 핀에 접근할 수 있는 최고 권한 부여
+    privileged: true 
+    
+    # [중요] 라즈베리 파이 본체와 네트워크를 완전히 공유
+    # 네이티브 OS에 띄운 크로미움 브라우저가 localhost:8765로 즉시 접근할 수 있게 됨
+    network_mode: "host"
+    
+    restart: unless-stopped
+
+  # 2. 어르신용 React UI 웹 서버 (Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"  # React 기본 포트(3000)를 내 PC의 3001번으로 연결
+    volumes:
+      - ./frontend:/app          # 내 PC의 코드를 도커 안으로 실시간 동기화
+      - /app/node_modules        # 도커 내부에서 설치된 패키지 폴더는 덮어쓰지 않고 보호
+    environment:
+      # 윈도우(WSL2) 환경에서 파일 수정이 즉각 감지되도록 강제하는 필수 옵션
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_PORT=0
