@@ -16,11 +16,12 @@ services:
     # [중요] GPIO 제어(rpi-lgpio 등)를 위해 하드웨어 핀에 접근할 수 있는 최고 권한 부여
     privileged: true 
     
-    # ports:
-    #   - "8765:8765"
+    # 윈도우 개발용
+    ports:
+      - "8765:8765"
     # [중요] 라즈베리 파이 본체와 네트워크를 완전히 공유
     # 네이티브 OS에 띄운 크로미움 브라우저가 localhost:8765로 즉시 접근할 수 있게 됨
-    network_mode: "host"
+    # network_mode: "host"
     
     restart: unless-stopped
 
