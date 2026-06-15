@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     libasound2-dev \
     portaudio19-dev \
     flac \
+    mpg123 \
     gcc \
     build-essential \
     python3-dev \
