@@ -1,23 +1,32 @@
-# 라즈베리파이 아키텍처와 호환되는 베이스 이미지 (Python 3.7)
-FROM python:3.7-slim
+# Dockerfile
+# 라즈베리 파이 5(Bookworm) 환경에 맞춘 Python 3.10 슬림 이미지 사용
+FROM python:3.10-slim-bookworm
 
 WORKDIR /app
 
+# 파이썬 환경 변수 설정 (버퍼링 방지 및 바이트코드 생성 방지)
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# ALSA 오디오 라이브러리 등 하드웨어 제어에 필요한 OS 패키지 설치
+# 시스템 패키지 설치: PyAudio 및 STT 구동을 위한 필수 C 라이브러리 추가
 RUN apt-get update && apt-get install -y \
     alsa-utils \
     libasound2-dev \
+    portaudio19-dev \
+    flac \
     gcc \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# 파이썬 패키지 설치
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY ./src ./src
 
-# 하드웨어 제어 메인 루프 실행
-CMD ["python", "src/audio_controller.py"]
+# 로컬 웹소켓 포트(8765) 노출
+EXPOSE 8765
+
+# 에이전트 실행
+CMD ["python", "agent.py"]
