@@ -48,6 +48,11 @@ class AnalysisTriggerRequest(BaseModel):
     file_path: str
     callback_url: str
 
+
+class FastChatRequest(BaseModel):
+    user_text: str
+    memory_context: str
+
 def verify_api_token(authorization: str = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized. Missing token.")
@@ -529,3 +534,34 @@ async def trigger_analysis(
         callback_url=request.callback_url
     )
     return {"message": "Analysis started in background."}
+
+
+@app.post("/api/v1/fast-chat")
+async def generate_fast_reply(request: FastChatRequest):
+    # 그림일기, 점수 분석 다 빼고 오직 '상냥한 대답'만 요구하는 가벼운 프롬프트
+    prompt = f"""
+    당신은 어르신을 보살피는 친절하고 따뜻한 손주/말벗입니다.
+    아래 과거 기억을 참고하여 어르신의 말씀에 1~2문장으로 짧고 다정하게 대답해 주세요.
+    
+    [과거 기억]
+    {request.memory_context}
+    
+    [어르신 말씀]
+    {request.user_text}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": "친절한 AI 말벗입니다. JSON이 아닌 일반 텍스트로만 대답하세요."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        ai_answer = response.choices[0].message.content.strip()
+        return {"reply_text": ai_answer}
+        
+    except Exception as e:
+        print(f"[AI Error] 빠른 답변 생성 실패: {e}")
+        raise HTTPException(status_code=500, detail="LLM generation failed")
