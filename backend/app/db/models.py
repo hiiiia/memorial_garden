@@ -48,7 +48,8 @@ class Dependent(Base):
     guardian_links = relationship("GuardianDependentMapping", back_populates="dependent", cascade="all, delete-orphan")
     logs = relationship("Log", back_populates="dependent")
     alerts = relationship("Alert", back_populates="dependent")
-
+    fast_chats = relationship("FastChat", back_populates="dependent")
+    
 # 연동 수락/대기 상태를 관리하는 매핑 테이블
 class GuardianDependentMapping(Base):
     __tablename__ = "guardian_dependent_mappings"
@@ -65,6 +66,22 @@ class GuardianDependentMapping(Base):
     guardian = relationship("Guardian", back_populates="dependent_links")
     dependent = relationship("Dependent", back_populates="guardian_links")
 
+class FastChat(Base):
+    __tablename__ = "fast_chats"
+
+    id = Column(String(50), primary_key=True, index=True)
+    dependent_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False)
+    
+    # 가벼운 실시간 대화용 텍스트 및 오디오
+    user_text = Column(Text, nullable=False)
+    reply_text = Column(Text, nullable=True)
+    reply_audio_url = Column(String(500), nullable=True)
+    
+    status = Column(String(20), default="PROCESSING", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+    dependent = relationship("Dependent", back_populates="fast_chats")
+    
 class Log(Base):
     __tablename__ = "logs"
 

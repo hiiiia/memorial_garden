@@ -48,6 +48,13 @@ class AnalysisTriggerRequest(BaseModel):
     file_path: str
     callback_url: str
 
+
+class FastChatCallbackRequest(BaseModel):
+    job_id: str
+    user_text: str
+    memory_context: str
+    callback_url: str
+
 def verify_api_token(authorization: str = Header(None)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Unauthorized. Missing token.")
@@ -123,83 +130,79 @@ def extract_audio_with_ffmpeg(file_path: str, target_sr: int = 16000) -> np.ndar
     return np.frombuffer(out, np.float32).flatten()
 
 # ==========================================
-# [무료 이미지 생성] Pollinations.ai 연동 (재시도 로직 포함)
+# [무료 이미지 생성] Pollinations AI (재시도 로직 포함)
 # ==========================================
+# async def generate_diary_image(image_prompt: str, job_id: str, max_retries: int = 3, base_delay: int = 5) -> str:
+#     if not image_prompt:
+#         return ""
+
+#     print("\n[AI Image] 🎨 Pollinations API로 그림일기 생성 중 (워터마크 허용)...")
+    
+#     enhanced_prompt = f"{image_prompt}, watercolor style, warm colors, fairy tale illustration"
+#     encoded_prompt = urllib.parse.quote(enhanced_prompt)
+    
+#     # 🌟 핵심: nologo=true 옵션을 빼면 다시 무료로 작동합니다!
+#     api_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512"
+
+#     save_dir = "/app/uploads/diary_images"
+#     os.makedirs(save_dir, exist_ok=True)
+#     file_name = f"diary_{job_id}.png"
+#     save_path = os.path.join(save_dir, file_name)
+
+#     for attempt in range(1, max_retries + 1):
+#         try:
+#             async with httpx.AsyncClient() as http_client:
+#                 response = await http_client.get(api_url, timeout=60.0)
+#                 response.raise_for_status()
+
+#                 with open(save_path, "wb") as f:
+#                     f.write(response.content)
+
+#             image_url = f"http://localhost:8000/static/diary_images/{file_name}"
+#             print(f"[AI Image] ✅ 그림일기 저장 완료: {save_path}")
+#             return image_url
+
+#         except Exception as e:
+#             print(f"[AI Image Error] 이미지 다운로드 실패 (시도 {attempt}): {str(e)}")
+#             if attempt < max_retries:
+#                 await asyncio.sleep(base_delay * attempt)
+#             else:
+#                 return ""
+
+
 async def generate_diary_image(image_prompt: str, job_id: str, max_retries: int = 3, base_delay: int = 5) -> str:
     if not image_prompt:
         return ""
 
-    print("\n[AI Image] 🎨 Pollinations API로 그림일기 이미지 생성 요청 중...")
-    enhanced_prompt = f"{image_prompt}, watercolor style, warm colors, fairy tale illustration"
-    encoded_prompt = urllib.parse.quote(enhanced_prompt)
-    api_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
-
+    print("\n[AI Image] 🚧 외부 AI 이미지 API 과금으로 인한 디버깅용 함수 실행. 테스트용 임시(Dummy) 이미지를 다운로드합니다...")
+    
+    # AI 이미지 대신, placehold.co 에서 제공하는 512x512 사이즈의 가짜 임시 이미지 활용
+    dummy_url = "https://placehold.co/512x512/e2e8f0/475569.png?text=Picture+Diary+Test"
+    
     save_dir = "/app/uploads/diary_images"
     os.makedirs(save_dir, exist_ok=True)
     file_name = f"diary_{job_id}.png"
     save_path = os.path.join(save_dir, file_name)
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            async with httpx.AsyncClient() as http_client:
-                response = await http_client.get(api_url, timeout=60.0)
-                response.raise_for_status()
+    try:
+        async with httpx.AsyncClient() as http_client:
+            # 봇 차단(WAF) 방화벽을 피하기 위해 일반 크롬 브라우저인 척 위장
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            
+            response = await http_client.get(dummy_url, headers=headers, timeout=30.0)
+            response.raise_for_status()
 
-                with open(save_path, "wb") as f:
-                    f.write(response.content)
+            with open(save_path, "wb") as f:
+                f.write(response.content)
 
-            image_url = f"http://localhost:8000/static/diary_images/{file_name}"
-            print(f"[AI Image] ✅ 그림일기 저장 완료: {save_path}")
-            return image_url
+        image_url = f"http://localhost:8000/static/diary_images/{file_name}"
+        print(f"[AI Image] ✅ 테스트용 임시 이미지 저장 완료 (콜백 전송 진행): {save_path}")
+        return image_url
 
-        except Exception as e:
-            print(f"[AI Image Error] 이미지 다운로드 실패 (시도 {attempt}): {str(e)}")
-            if attempt < max_retries:
-                await asyncio.sleep(base_delay * attempt)
-            else:
-                return ""
-
-# # ==========================================
-# # 이미지 생성 함수 (재시도 로직 포함)
-# # ==========================================
-# async def generate_diary_image(image_prompt: str, job_id: str, max_retries: int = 3, base_delay: int = 5) -> str:
-#     if not image_prompt:
-#         return ""
-
-#     print("\n[AI Image] 그림일기 이미지 생성 시작")
-#     print(f"[AI Image] image_prompt: {image_prompt}")
-
-#     for attempt in range(1, max_retries + 1):
-#         try:
-#             response = client.models.generate_content(
-#                 model="gemini-2.5-flash-image",
-#                 contents=[image_prompt]
-#             )
-
-#             save_dir = "/app/uploads/diary_images"
-#             os.makedirs(save_dir, exist_ok=True)
-
-#             file_name = f"diary_{job_id}.png"
-#             save_path = os.path.join(save_dir, file_name)
-
-#             for part in response.parts:
-#                 if part.inline_data is not None:
-#                     image = part.as_image()
-#                     image.save(save_path)
-#                     image_url = f"http://localhost:8000/static/diary_images/{file_name}"
-#                     print(f"[AI Image] ✅ 이미지 저장 완료: {save_path}")
-#                     return image_url
-
-#             raise ValueError("응답에 이미지 데이터가 없습니다.")
-
-#         except Exception as e:
-#             print(f"[AI Image Error] 이미지 생성 실패 (시도 {attempt}): {str(e)}")
-#             if attempt < max_retries:
-#                 await asyncio.sleep(base_delay * attempt)
-#             else:
-#                 print(f"[AI Image Critical Error] 그림일기 이미지 생성 최대 재시도({max_retries}회) 초과.")
-#                 return "" # 실패 시 빈 문자열 반환
-
+    except Exception as e:
+        print(f"[AI Image Error] 더미 이미지조차 다운로드 실패: {str(e)}")
+        # 최악의 경우 파일 생성조차 실패하면 백엔드 에러를 막기 위해 빈 문자열 반환
+        return ""
 
 # ==========================================
 # 3. 메인 분석 파이프라인
@@ -269,14 +272,18 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
     for attempt in range(1, max_retries + 1):
         try:
             print(f"\n[AI] === 텍스트 분석 시도 횟수 : {attempt}/{max_retries} ===")
+            
             prompt = f"""
                 당신은 노인 회상치료(Reminiscence Therapy) 전문가이자 정서 케어 AI입니다.
-                업로드된 음성 파일을 분석하여 사용자의 심리 상태와 대화 내용을 평가하세요.
+                사용자의 대화 내용을 바탕으로 사용자의 심리 상태와 대화 내용을 평가하세요.
                 
                 [과거 기억 참고]
                 어르신과의 이전 대화 기록 중, 현재 상황과 연관성 높은 기억입니다.
                 {memory_context}
                 -> 'reply_text'와 'diary_text'를 작성할 때 위 과거 기억을 자연스럽게 언급하며 아는 척을 해주세요.
+                
+                [사용자 대화 내용]
+                {quick_stt_text}
                 
                 [분석 목표]
                 1. 현재 감정 상태 분석
@@ -288,6 +295,7 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 7. 사용자에게 보여줄 일기 생성
                 8. 그림일기 삽화를 만들기 위한 이미지 프롬프트 생성
                 9. 분석 완료 후 사용자에게 보여줄 짧은 안내 문장 생성
+                
                 반드시 아래 JSON 형식으로만 응답하세요.
                 {{
                 "risk_score": 0.0,
@@ -295,7 +303,6 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 "cognitive_decline_score": 0.0,
                 "primary_emotion": "neutral",
                 "llm_summary": "",
-                "stt_text": "",
                 "memory_topics": [],
                 "memory_questions": [],
                 "life_log": "",
@@ -304,10 +311,12 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 "care_level": "NORMAL",
                 "reply_text": ""
                 }}
+                
                 [점수 규칙]
                 - 모든 score는 0.0 ~ 1.0 범위
                 - 위험 징후가 없으면 0에 가깝게 평가
                 - 위험 징후가 명확할수록 1에 가깝게 평가
+                
                 [depression_score 규칙]
                 - 우울감, 외로움, 고립감, 무기력, 상실감 등을 종합적으로 평가
                 - 최근 삶에 대한 의욕 저하, 외로움 표현, 사회적 단절 표현이 많을수록 높게 평가
@@ -315,48 +324,52 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 - 약한 우울 또는 외로움이 관찰되면 0.3 ~ 0.5
                 - 지속적인 우울감이 관찰되면 0.6 ~ 0.8
                 - 삶을 포기하거나 극단적 표현이 나타나면 0.9 이상
+                
                 [cognitive_decline_score 규칙]
                 - 기억 혼동, 시간·장소 인지 오류, 반복 발화 등을 종합 평가
                 - 특별한 이상이 없으면 0.0 ~ 0.2
                 - 경미한 기억력 저하 의심은 0.3 ~ 0.5
                 - 반복적 혼동이 관찰되면 0.6 ~ 0.8
                 - 심각한 인지 저하 의심은 0.9 이상
+                
                 [care_level 규칙]
                 - NORMAL: 일반적인 상태
                 - WATCH: 관찰 필요
                 - WARNING: 상담 또는 보호자 관심 필요
                 - EMERGENCY: 즉각적인 보호자 개입 필요
-                [stt_text 규칙]
-                - 음성에서 인식한 사용자의 발화를 가능한 한 그대로 한국어 텍스트로 작성
-                - 인식이 어렵다면 빈 문자열로 반환
+                
                 [memory_topics 규칙]
                 - 사용자가 과거 기억이나 추억을 언급한 경우에만 작성
                 - 관련 내용이 없으면 빈 배열 [] 반환
+                
                 [memory_questions 규칙]
                 - 다음 회상 대화에서 사용할 질문
                 - 회상 주제가 존재할 때만 생성
                 - 반드시 사용자의 발화 내용과 관련된 질문 생성
                 - 회상 주제가 없으면 빈 배열 [] 반환
                 - 최대 3개 생성
+                
                 [life_log 규칙]
                 - 분석용 요약 기록
                 - 사용자의 대화 내용을 바탕으로 작성
                 - 2~4문장 정도로 작성
                 - 실제 언급하지 않은 사실은 상상해서 추가하지 말 것
+                
                 [diary_text 규칙]
                 - 사용자에게 보여줄 그림일기 본문
                 - life_log를 바탕으로 따뜻하고 차분한 하루 일기 형식으로 작성
                 - 3~5문장 정도로 작성
                 - 제목은 작성하지 말 것
                 - 실제 언급하지 않은 사건, 인물, 장소를 추가하지 말 것
+                
                 [image_prompt 규칙]
                 - diary_text 내용을 바탕으로 그림일기 삽화 생성을 위한 장면 설명 작성
-                - 한국어로 작성
-                - 따뜻한 수채화 스타일
-                - 동화책 삽화 스타일
+                - 반드시 영어(English)로 작성할 것
+                - 수채화 스타일을 강조하는 키워드(watercolor style, warm colors, fairy tale illustration)를 프롬프트에 포함할 것
                 - 인물의 얼굴을 사실적으로 특정하지 말 것
                 - 실제 사용자가 말하지 않은 사건은 추가하지 말 것
-                - 1~2문장으로 작성
+                - 1~2문장으로 간결하게 작성
+                
                 [reply_text 규칙]
                 - 분석 완료 후 사용자에게 보여줄 짧은 안내 문장
                 - 사용자의 하루와 감정에 공감할 것
@@ -371,15 +384,16 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 나쁜 예:
                 "자녀분들과 어떤 이야기를 나누셨나요?"
                 "어머~ 너무 좋았겠어용~ 헤헤 >_<"
+                
                 [중요]
                 - 음성이 단순 테스트(예: "테스트", "하나 둘 셋")인 경우:
-                - risk_score는 0에 가깝게 평가
-                - memory_topics는 []
-                - memory_questions는 []
-                - life_log는 테스트 내용을 간단히 기록
-                - diary_text는 테스트 기록 수준으로 짧게 작성
-                - image_prompt는 빈 문자열로 반환
-                - 과도한 해석 금지
+                  - risk_score는 0에 가깝게 평가
+                  - memory_topics는 []
+                  - memory_questions는 []
+                  - life_log는 테스트 내용을 간단히 기록
+                  - diary_text는 테스트 기록 수준으로 짧게 작성
+                  - image_prompt는 빈 문자열로 반환
+                  - 과도한 해석 금지
                 JSON 외의 문장은 절대 출력하지 마세요.
             """
             
@@ -424,6 +438,7 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             vector_embedding = save_embed.embeddings[0].values
             print("[AI] ✅ 저장용 벡터 변환 완료!")
         except Exception as e:
+            vector_embedding = [0.0] * 3072 # None 대신 0.0 배열 초기화
             print(f"[AI Warning] 저장용 벡터 변환 실패: {e}")
 
 
@@ -475,6 +490,13 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
             print(f"\n[AI] 백엔드로 COMPLETED 콜백 송신 중... (시도: {attempt}/{max_retries})")
             async with httpx.AsyncClient() as http_client:
                 res = await http_client.post(callback_url, json=callback_body, headers=headers)
+                
+                
+                if res.status_code == 422:
+                    print(f"\n[AI 422 Error Detail] 백엔드가 거절한 이유:\n{res.text}")
+                    print(f"[AI 보낸 데이터 확인] {callback_body}") # 우리가 뭘 보냈는지도 확인
+                
+                
                 res.raise_for_status()
                 print(f"[AI] ✅ 백엔드 전송 완료! 상태코드: {res.status_code}")
             break
@@ -496,6 +518,85 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 )
 
 
+# ==========================================
+# 빠른 분석 (실시간 대화) 파이프라인
+# ==========================================
+async def process_fast_chat_and_callback(payload: dict):
+    max_retries = 3
+    # 만약 LLM이 끝내 실패할 경우 백엔드로 보낼 기본 안전망 대답
+    ai_answer = "제가 잠시 딴생각을 하느라 못 들었어요."
+    callback_status = "FAILED"
+
+    prompt = f"""
+    당신은 어르신을 보살피는 친절하고 따뜻한 손주/말벗입니다.
+    아래 과거 기억을 참고하여 어르신의 말씀에 1~2문장으로 짧고 다정하게 대답해 주세요.
+    
+    [과거 기억]
+    {payload['memory_context']}
+    
+    [어르신 말씀]
+    {payload['user_text']}
+    
+    JSON 외의 문장은 절대 출력하지 마세요.
+    반드시 아래와 같은 JSON 형식으로만 응답하세요:
+    {{
+        "reply_text": "어르신께 드릴 1~2문장의 다정한 대답"
+    }}
+    """
+
+    # LLM 호출 및 재시도 루프 (기존 코드의 break 구조 적용)
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant. Output only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"}, # 기존 코드 규격 통일
+                temperature=0.7
+            )
+            
+            # JSON 디코딩 에러를 잡아내는 기존 코드의 try-except 차용
+            try:
+                analysis_result = json.loads(response.choices[0].message.content)
+                ai_answer = analysis_result.get("reply_text", ai_answer)
+            except json.JSONDecodeError as json_err:
+                raise json_err
+
+            print(f"[AI] ✅ 빠른 답변 생성 완료! (Job: {payload['job_id']})")
+            print(json.dumps(analysis_result, indent=2, ensure_ascii=False))
+            
+            callback_status = "COMPLETED"
+            break  # 정상 처리 완료 시 재시도 루프 탈출
+
+        except Exception as e:
+            print(f"[AI Error] 생성 실패 (시도 {attempt}/{max_retries}): {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(2) # 실패 시 2초 쉬고 다시 시도
+            else:
+                print(f"[AI Critical] 최종 생성 실패. 기본 답변으로 콜백을 전송합니다.")
+
+    # 백엔드로 최종 결과 콜백 전송
+    for attempt in range(1, 4):
+        try:
+            async with httpx.AsyncClient() as http_client:
+                await http_client.post(
+                    payload["callback_url"],
+                    json={
+                        "status": callback_status, 
+                        "reply_text": ai_answer, 
+                        "job_id": payload["job_id"]
+                    },
+                    timeout=5.0
+                )
+            print(f"[AI] 🔔 백엔드 콜백 전송 완료! (상태: {callback_status})")
+            break # 콜백 성공 시 루프 탈출
+        except Exception as e:
+            print(f"[AI Warning] 콜백 전송 실패 (시도 {attempt}/3): {e}")
+            await asyncio.sleep(1)
+
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to AI Analysis Server (Gemini)"}
@@ -514,3 +615,18 @@ async def trigger_analysis(
         callback_url=request.callback_url
     )
     return {"message": "Analysis started in background."}
+
+
+
+@app.post("/api/v1/fast-chat", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_fast_chat(
+    request: FastChatCallbackRequest,
+    background_tasks: BackgroundTasks,
+    token: str = Depends(verify_api_token)
+):
+    # payload 딕셔너리로 변환하여 함수에 전달
+    background_tasks.add_task(
+        process_fast_chat_and_callback,
+        payload=request.dict()
+    )
+    return {"message": "Fast chat started in background."}

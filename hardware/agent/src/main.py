@@ -5,26 +5,37 @@ import aiohttp
 import speech_recognition as sr
 import os
 import tempfile
+import time
 
 # 🔗 백엔드 서버 기본 주소 및 어르신 ID 세팅 (실제 환경에 맞게 변경)
-BACKEND_URL = "http://localhost:8000" 
-DEPENDENT_ID = "dep_03" 
+# 내 윈도우 PC(호스트)를 거쳐서 다른 도커 컨테이너의 8000번 포트로 들어가게 해주는 주소
+BACKEND_URL = "http://host.docker.internal:8000"
+DEPENDENT_ID = "dep_003" 
 
-# --- 1. STT 함수 (기존 유지) ---
+# # --- 1. STT 함수 (기존 유지) ---
+# def recognize_speech_from_mic():
+#     recognizer = sr.Recognizer()
+#     with sr.Microphone() as source:
+#         print("🎙️ 주변 소음 적응 중 (1초)...")
+#         recognizer.adjust_for_ambient_noise(source, duration=1)
+#         print("🎙️ 어르신 말씀 듣는 중...")
+#         try:
+#             audio = recognizer.listen(source, timeout=10, phrase_time_limit=5)
+#             print("⏳ 구글 STT로 텍스트 변환 중...")
+#             return recognizer.recognize_google(audio, language="ko-KR")
+#         except sr.WaitTimeoutError:
+#             return "(말씀이 없으셨습니다)"
+#         except Exception as e:
+#             return f"(오류 발생: {e})"
+# --- STT 함수 (마이크 없는 PC 테스트용 가짜 마이크) ---
 def recognize_speech_from_mic():
-    recognizer = sr.Recognizer()
-    with sr.Microphone() as source:
-        print("🎙️ 주변 소음 적응 중 (1초)...")
-        recognizer.adjust_for_ambient_noise(source, duration=1)
-        print("🎙️ 어르신 말씀 듣는 중...")
-        try:
-            audio = recognizer.listen(source, timeout=10, phrase_time_limit=5)
-            print("⏳ 구글 STT로 텍스트 변환 중...")
-            return recognizer.recognize_google(audio, language="ko-KR")
-        except sr.WaitTimeoutError:
-            return "(말씀이 없으셨습니다)"
-        except Exception as e:
-            return f"(오류 발생: {e})"
+    print("🎙️ [테스트 모드] 마이크가 없으므로 가짜 음성을 생성합니다... (2초 대기)")
+    time.sleep(2) # 실제로 말하고 인식하는 것처럼 2초 대기
+    
+    dummy_text = "지난번 우리 손주 이름이 뭐였지?"
+    print(f"📝 [가상 인식 완료]: {dummy_text}")
+    return dummy_text
+
 
 # --- 2. 🚀 [핵심] 백엔드 RAG 트리거 및 폴링 함수 ---
 async def query_backend_with_polling(session: aiohttp.ClientSession, user_text: str):
@@ -51,7 +62,7 @@ async def query_backend_with_polling(session: aiohttp.ClientSession, user_text: 
 
     # 2단계: 폴링 루프 (0.5초 간격, 최대 10초 대기)
     status_url = f"{BACKEND_URL}/api/v1/memory/check_status/{job_id}"
-    max_retries = 20 
+    max_retries = 200 
     
     for attempt in range(max_retries):
         await asyncio.sleep(0.5) 

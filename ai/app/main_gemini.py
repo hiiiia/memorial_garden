@@ -32,6 +32,13 @@ class AnalysisTriggerRequest(BaseModel):
     user_id: str
     file_path: str
     callback_url: str
+    
+# 빠른 대화용 데이터 스키마
+class FastChatRequest(BaseModel):
+    job_id: str
+    user_text: str
+    memory_context: str
+    callback_url: str
 
 def verify_api_token(authorization: str = Header(None)):
     if not authorization:
@@ -491,6 +498,88 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 )
 
 
+# ==========================================
+# 빠른 대화 (Fast Chat) 파이프라인
+# ==========================================
+async def process_fast_chat_and_callback(payload: dict):
+    max_retries = 3
+    base_delay = 2
+    ai_answer = "제가 잠시 딴생각을 하느라 못 들었어요."
+    callback_status = "FAILED"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {settings.AI_SECRET_TOKEN}"
+    }
+
+    prompt = f"""
+    당신은 어르신을 보살피는 친절하고 따뜻한 손주/말벗입니다.
+    아래 과거 기억을 참고하여 어르신의 말씀에 1~2문장으로 짧고 다정하게 대답해 주세요.
+    
+    [과거 기억]
+    {payload['memory_context']}
+    
+    [어르신 말씀]
+    {payload['user_text']}
+    
+    JSON 외의 문장은 절대 출력하지 마세요.
+    반드시 아래와 같은 JSON 형식으로만 응답하세요:
+    {{
+        "reply_text": "어르신께 드릴 1~2문장의 다정한 대답"
+    }}
+    """
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            # 💡 Gemini SDK를 이용한 텍스트 생성 (JSON 모드 강제)
+            response = client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    system_instruction="You are a helpful assistant. Output only valid JSON.",
+                    response_mime_type="application/json",
+                    temperature=0.7
+                )
+            )
+            
+            try:
+                analysis_result = json.loads(response.text)
+                ai_answer = analysis_result.get("reply_text", ai_answer)
+            except json.JSONDecodeError as json_err:
+                raise json_err
+
+            print(f"[AI] ✅ 빠른 답변 생성 완료! (Job: {payload['job_id']})")
+            callback_status = "COMPLETED"
+            break
+
+        except Exception as e:
+            print(f"[AI Error] 생성 실패 (시도 {attempt}/{max_retries}): {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(base_delay * attempt)
+            else:
+                print(f"[AI Critical] 최종 생성 실패. 기본 답변으로 콜백을 전송합니다.")
+
+    # 백엔드로 최종 결과 콜백 전송
+    for attempt in range(1, 4):
+        try:
+            async with httpx.AsyncClient() as http_client:
+                await http_client.post(
+                    payload["callback_url"],
+                    json={
+                        "status": callback_status, 
+                        "reply_text": ai_answer, 
+                        "job_id": payload["job_id"]
+                    },
+                    headers=headers,
+                    timeout=5.0
+                )
+            print(f"[AI] 🔔 백엔드 콜백 전송 완료! (상태: {callback_status})")
+            break
+        except Exception as e:
+            print(f"[AI Warning] 콜백 전송 실패 (시도 {attempt}/3): {e}")
+            await asyncio.sleep(1)
+
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to AI Analysis Server (Gemini)"}
@@ -509,3 +598,16 @@ async def trigger_analysis(
         callback_url=request.callback_url
     )
     return {"message": "Analysis started in background."}
+
+@app.post("/api/v1/fast-chat", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_fast_chat(
+    request: FastChatRequest,
+    background_tasks: BackgroundTasks,
+    token: str = Depends(verify_api_token)
+):
+    # payload 딕셔너리로 변환하여 함수에 전달
+    background_tasks.add_task(
+        process_fast_chat_and_callback,
+        payload=request.dict()
+    )
+    return {"message": "Fast chat started in background."}

@@ -219,20 +219,24 @@ async def receive_ai_callback(
         }
     )
     
+# 빠른 응답용(Rag)
 @router.post("/{job_id}/fast-chat")
-async def receive_fast_chat_callback(job_id: str, payload: FastChatCallbackPayload):
-    print(f"\n[Backend] 🔔 빠른 대화 콜백 수신 완료! (Job ID: {job_id})")
+async def receive_fast_chat_callback(job_id: str, payload: FastChatCallbackPayload, db: Session = Depends(get_db)):
+    #  FastChat 테이블 조회
+    chat_record = db.query(models.FastChat).filter(models.FastChat.id == job_id).first()
     
+    if not chat_record:
+        return {"status": "error", "message": "Job ID not found"}
+
     if payload.status == "COMPLETED":
-        # 💡 백엔드에서 직접 TTS 생성 및 MP3 저장 (작성해주신 함수 재사용)
         audio_url = await generate_tts_audio_edge(payload.reply_text, job_id)
         
+        chat_record.reply_text = payload.reply_text
         if audio_url:
-            print(f"[Backend] ⚡ 실시간 대화 음성 준비 완료!")
-            print(f" -> Text: {payload.reply_text}")
-            print(f" -> Audio URL: {audio_url}")
-            
-            # (TODO) 라즈베리 파이로 완성된 audio_url을 전달하는 로직 필요
-            return {"status": "success"}
-            
-    return {"status": "failed"}
+            chat_record.reply_audio_url = audio_url
+        chat_record.status = "COMPLETED"
+    else:
+        chat_record.status = "FAILED"
+        
+    db.commit()
+    return {"status": "success"}

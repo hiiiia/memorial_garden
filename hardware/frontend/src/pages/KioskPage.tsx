@@ -16,7 +16,7 @@ const KioskPage: React.FC = () => {
 
   const wsRef = useRef<WebSocket | null>(null);
 
-  // 🔌 웹소켓 연결 및 하드웨어 신호 수신 로직
+// 🔌 웹소켓 연결 및 하드웨어 신호 수신 로직
   useEffect(() => {
     const connectWebSocket = () => {
       const ws = new WebSocket('ws://localhost:8765');
@@ -26,17 +26,19 @@ const KioskPage: React.FC = () => {
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         
-        // 하드웨어 상태 변화 수신
         if (data.status) {
           setAgentState(data.status);
           
-          // 하드웨어 버튼(물리 버튼)을 눌러서 갑자기 듣기 시작하면 자동으로 AI 화면으로 전환
-          if (data.status !== 'idle' && screen !== 'ai') {
-            setScreen('ai');
-          }
+          // 💡 수정됨: 함수형 업데이트를 사용하여 항상 최신 화면 상태(prev)를 확인합니다.
+          // 이렇게 하면 의존성 배열에 screen을 넣지 않아도 안전하게 비교할 수 있습니다.
+          setScreen((prevScreen) => {
+            if (data.status !== 'idle' && prevScreen !== 'ai') {
+              return 'ai';
+            }
+            return prevScreen; // 조건에 안 맞으면 기존 화면 유지
+          });
         }
         
-        // AI 최종 응답(자막) 수신
         if (data.type === 'AI_RESPONSE' && data.text) {
           setAiText(data.text);
         }
@@ -44,22 +46,32 @@ const KioskPage: React.FC = () => {
 
       ws.onclose = () => {
         setWsConnected(false);
-        setTimeout(connectWebSocket, 3000); // 끊기면 3초 후 재연결
+        setTimeout(connectWebSocket, 3000);
       };
 
       wsRef.current = ws;
     };
 
     connectWebSocket();
-    return () => wsRef.current?.close();
-  }, [screen]);
+    
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  // 수정됨: screen을 빼고 빈 배열로 두어, 화면이 바뀌어도 웹소켓이 끊기지 않게 합니다.
+  }, []);
 
-  // 🎤 '말하기' 버튼 클릭 시 실행되는 함수
+// 🎤 '말하기' 버튼 클릭 시 실행되는 함수
   const handleStartTalk = () => {
     setScreen('ai'); // AI 화면으로 넘기기
-    if (wsRef.current && wsConnected) {
+    
+    // 수정됨: wsConnected 대신 실제 웹소켓의 연결 상태(readyState)를 확인합니다.
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // 파이썬 쪽으로 강제 녹음 시작 명령 전송
       wsRef.current.send(JSON.stringify({ command: 'force_record' }));
+    } else {
+      console.warn("⏳ 웹소켓 연결을 기다리는 중입니다. 잠시 후 다시 눌러주세요.");
     }
   };
 
