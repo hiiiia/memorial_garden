@@ -2,6 +2,7 @@ import uuid
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from .database import Base
 
 # ID 자동 생성기 (UUID4를 32자리 문자열로 변환)
@@ -91,6 +92,10 @@ class Log(Base):
     # 프론트엔드 달력 UI용 텍스트 및 해시태그
     diary_text = Column(Text, nullable=True) # 추가! (동화풍 그림일기 본문)
     keywords = Column(Text, nullable=True)   # 추가! (해시태그 - 콤마로 구분하여 저장)
+    
+    # 어르신 장기 기억(RAG)용 벡터 컬럼
+    # 구글 gemini-embedding-2 모델의 출력 차원인 3072에 맞춤
+    vector_embedding = Column(Vector(3072), nullable=True)
     
     created_at = Column(DateTime, server_default=func.now(), index=True)
 

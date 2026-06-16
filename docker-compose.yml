@@ -32,6 +32,10 @@ services:
       - .env
     networks:
       - platform-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      
     # AI 모델 로딩으로 인해 메모리 부족(OOM)으로 꺼질 경우 자동 재시작
     restart: unless-stopped
 

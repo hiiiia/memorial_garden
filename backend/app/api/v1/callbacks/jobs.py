@@ -16,6 +16,8 @@ from db import models
 from core.config import settings
 from api.v1.utils.notifier import send_emergency_alert, send_kakao_alert
 from api.v1.utils.security import verify_ai_token
+from core.response import unified_response
+
 
 router = APIRouter()
 
@@ -27,12 +29,19 @@ class AnalysisData(BaseModel):
     reply_text: str
     stt_text : str
     image_url: str = None # AI가 생성한 그림일기 URL 추가
+    vector_embedding: list[float]  = None
 
 class CallbackRequest(BaseModel):
     user_id: str
     status: str
     analysis_data: AnalysisData
 
+# AI 빠른 응답 결과 스키마
+class FastChatCallbackPayload(BaseModel):
+    job_id: str
+    status: str
+    reply_text: str
+    
 # --- 2. 보안 토큰 검증 함수 ---
 AI_SECRET_TOKEN = settings.AI_SECRET_TOKEN
 OPENAI_API_KEY = settings.OPENAI_API_KEY
@@ -131,6 +140,10 @@ async def receive_ai_callback(
         # 그림일기 이미지가 생성되어 넘어왔다면 저장
         if payload.analysis_data.image_url:
             log_record.image_url = payload.analysis_data.image_url
+        
+        # RAG 벡터 저장
+        if payload.analysis_data.vector_embedding:
+            log_record.vector_embedding = payload.analysis_data.vector_embedding
             
         # TTS 생성 및 파일 경로 저장
         if payload.analysis_data.reply_text:
@@ -198,4 +211,28 @@ async def receive_ai_callback(
                     )
                 )
 
-    return {"message": "Callback processed successfully", "job_id": job_id}
+    return unified_response(
+        status_code= 200,
+        message="데이터 저장 완료",
+        data={
+            "job_id" : job_id
+        }
+    )
+    
+@router.post("/{job_id}/fast-chat")
+async def receive_fast_chat_callback(job_id: str, payload: FastChatCallbackPayload):
+    print(f"\n[Backend] 🔔 빠른 대화 콜백 수신 완료! (Job ID: {job_id})")
+    
+    if payload.status == "COMPLETED":
+        # 💡 백엔드에서 직접 TTS 생성 및 MP3 저장 (작성해주신 함수 재사용)
+        audio_url = await generate_tts_audio_edge(payload.reply_text, job_id)
+        
+        if audio_url:
+            print(f"[Backend] ⚡ 실시간 대화 음성 준비 완료!")
+            print(f" -> Text: {payload.reply_text}")
+            print(f" -> Audio URL: {audio_url}")
+            
+            # (TODO) 라즈베리 파이로 완성된 audio_url을 전달하는 로직 필요
+            return {"status": "success"}
+            
+    return {"status": "failed"}

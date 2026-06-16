@@ -1,6 +1,10 @@
 fastapi
 uvicorn
 requests
+numpy
 google-genai
+#openai-whisper
+faster-whisper
+openai
 httpx
 pydantic-settings
