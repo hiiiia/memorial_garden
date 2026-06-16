@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // 팀원이 작성한 CSS 파일 경로에 맞게 수정해주세요. (예: import '../css/ElderPage.css';)
 import '../css/Kiosk.css'; 
 
-type Screen = 'home' | 'talk' | 'ai';
+type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'send' | 'finish';
 type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
 
 const KioskPage: React.FC = () => {
@@ -91,7 +91,12 @@ const KioskPage: React.FC = () => {
                 <button className="menu-btn talk-btn" onClick={() => setScreen('talk')}>
                   🎤<span>이야기<br />시작하기</span>
                 </button>
-                <button className="menu-btn diary-btn">📖<span>오늘의 일기</span></button>
+                <button
+                  className="menu-btn diary-btn"
+                  onClick={() => setScreen('diary')}
+                >
+                  📖<span>오늘의 일기</span>
+                </button>
                 <button className="menu-btn memory-btn">🖼<span>추억 보관함</span></button>
               </div>
             </div>
@@ -145,11 +150,88 @@ const KioskPage: React.FC = () => {
           <p className="listening-text">{getStatusText()}</p>
 
           <button className="stop-btn" onClick={() => {
-            setScreen('home');
+            setScreen('diary');
             // 필요하다면 파이썬으로 강제 종료(stop) 신호를 보낼 수도 있습니다.
           }}>
             ■ 그만하기
           </button>
+        </div>
+      )}
+            {screen === 'diary' && (
+        <div className="home-card diary-card">
+          <h1 className="diary-title">오늘의 일기</h1>
+
+          <div className="diary-content">
+            <div className="diary-image">
+              시장 그림
+            </div>
+
+            <div className="diary-text-box">
+              오늘은 시장에 다녀왔어요.<br />
+              채소도 사고 친구도 만나서<br />
+              즐거웠어요.
+            </div>
+          </div>
+
+          <div className="diary-buttons">
+            <button className="diary-listen-btn">🔊 다시듣기</button>
+
+            <button className="diary-next-btn" onClick={() => setScreen('send')}>
+              ➡ 다음
+            </button>
+          </div>
+        </div>
+      )}
+      {screen === 'send' && (
+        <div className="home-card send-card">
+          <h1 className="send-title">가족에게 보내기</h1>
+
+          <div className="send-content">
+            <div className="send-left">
+              <div className="send-envelope">💌</div>
+
+              <p className="send-question">
+                가족에게 오늘의 이야기를<br />
+                보내시겠어요?
+              </p>
+            </div>
+
+            <div className="send-buttons">
+              <button className="send-main-btn" onClick={() => setScreen('finish')}>
+                ✉ 보내기
+              </button>
+
+              <button
+                className="send-stop-btn"
+                onClick={() => setScreen('home')}
+              >
+                ■ 그만하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {screen === 'finish' && (
+        <div className="home-card finish-card">
+          <div className="finish-left">
+            <div className="finish-check">✓</div>
+            <p className="finish-main-text">가족에게 보냈어요!</p>
+          </div>
+
+          <div className="finish-right">
+            <div className="finish-family-row">
+              <div className="finish-profile">👩</div>
+              <p className="finish-family-text">
+                딸(김지현)에게<br />
+                전송되었습니다.
+              </p>
+            </div>
+
+            <button className="finish-btn" onClick={() => setScreen('home')}>
+              확인
+            </button>
+          </div>
         </div>
       )}
     </div>

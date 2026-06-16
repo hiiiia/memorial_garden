@@ -24,6 +24,7 @@ uploads/
 *.wav
 *.mp3
 *.log
+node_modules/
 
 # =========================
 # 4. OS & 에디터 설정
