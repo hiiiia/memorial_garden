@@ -6,9 +6,11 @@ import speech_recognition as sr
 import os
 import tempfile
 
-# 🔗 백엔드 서버 실제 주소 설정
-BACKEND_URL = "http://localhost:8000"  # 실배포 시 백엔드 실제 IP로 변경
+# 🔗 백엔드 서버 기본 주소 및 어르신 ID 세팅 (실제 환경에 맞게 변경)
+BACKEND_URL = "http://localhost:8000" 
+DEPENDENT_ID = "dep_03" 
 
+# --- 1. STT 함수 (기존 유지) ---
 def recognize_speech_from_mic():
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
@@ -24,31 +26,89 @@ def recognize_speech_from_mic():
         except Exception as e:
             return f"(오류 발생: {e})"
 
-async def fetch_and_play_tts(session: aiohttp.ClientSession, text: str):
-    if text.startswith("("):
-        return
-    print(f"🌐 [TTS] 백엔드 음성 생성 요청: {text}")
+# --- 2. 🚀 [핵심] 백엔드 RAG 트리거 및 폴링 함수 ---
+async def query_backend_with_polling(session: aiohttp.ClientSession, user_text: str):
+    """백엔드에 처리를 맡기고 0.5초마다 완료 여부를 확인합니다."""
+    if user_text.startswith("("):
+        return "어르신, 다시 한 번 말씀해 주시겠어요?", None
+
+    # 1단계: 백엔드에 텍스트 던지기 (Trigger)
+    trigger_url = f"{BACKEND_URL}/api/v1/memory/ask_text/{DEPENDENT_ID}"
+    print(f"🌐 [API] 백엔드로 텍스트 전송 중: {user_text}")
+    
     try:
-        async with session.post(f"{BACKEND_URL}/tts", json={"text": text}) as resp:
+        async with session.post(trigger_url, json={"text": user_text}) as resp:
+            if resp.status != 202:
+                print(f"❌ 백엔드 요청 거부 (Status: {resp.status})")
+                return "기억 창고와 연결이 끊어졌어요.", None
+            
+            result = await resp.json()
+            job_id = result.get("job_id")
+            print(f"✅ [Trigger] 접수 완료 (Job ID: {job_id}). 폴링 대기 시작...")
+    except Exception as e:
+        print(f"❌ 백엔드 연결 실패: {e}")
+        return "인터넷 연결이 불안정하네요.", None
+
+    # 2단계: 폴링 루프 (0.5초 간격, 최대 10초 대기)
+    status_url = f"{BACKEND_URL}/api/v1/memory/check_status/{job_id}"
+    max_retries = 20 
+    
+    for attempt in range(max_retries):
+        await asyncio.sleep(0.5) 
+        
+        try:
+            async with session.get(status_url) as status_resp:
+                if status_resp.status == 200:
+                    status_data = await status_resp.json()
+                    current_status = status_data.get("status")
+                    
+                    if current_status == "COMPLETED":
+                        print(f"✅ [Polling] 답변 생성 완료! (시도: {attempt+1}번)")
+                        reply_text = status_data.get("reply_text")
+                        audio_url = status_data.get("audio_url")
+                        return reply_text, audio_url
+                        
+                    elif current_status == "FAILED":
+                        print("❌ [Polling] 백엔드 처리 중 FAILED 발생")
+                        return "제가 잠시 딴생각을 하느라 놓쳤네요. 다시 말씀해 주시겠어요?", None
+                    
+                    print(f"⏳ [Polling] AI 서버가 대답을 생성 중입니다... ({attempt+1}/{max_retries})")
+        except Exception as e:
+            print(f"❌ 상태 확인(Polling) 중 에러: {e}")
+            
+    # 3단계: 타임아웃
+    print("❌ [Polling Timeout] 10초 초과. 대기 종료.")
+    return "기억을 떠올리는 데 시간이 조금 걸리네요. 조금 이따 다시 여쭤볼게요.", None
+
+# --- 3. 🎵 다운로드 및 오디오 재생 함수 ---
+async def play_audio_from_url(session: aiohttp.ClientSession, audio_url: str):
+    """백엔드가 알려준 URL에서 완성된 mp3를 받아 스피커로 재생합니다."""
+    if not audio_url:
+        return
+        
+    print(f"🔊 스피커 출력 준비 (오디오 다운로드): {audio_url}")
+    try:
+        async with session.get(audio_url) as resp:
             if resp.status == 200:
                 audio_data = await resp.read()
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
                     temp_path = fp.name
                     fp.write(audio_data)
                 
-                print("🔊 스피커 재생 시작")
+                # 라즈베리 파이 스피커 재생 (-q 옵션으로 로그 숨김)
                 await asyncio.to_thread(os.system, f"mpg123 -q {temp_path}")
                 os.remove(temp_path)
+                print("✅ 스피커 재생 완료 및 임시 파일 삭제")
             else:
-                print(f"❌ TTS 요청 실패 (Status: {resp.status})")
+                print(f"❌ 오디오 파일 다운로드 실패 (Status: {resp.status})")
     except Exception as e:
-        print(f"❌ TTS 재생 에러: {e}")
+        print(f"❌ 오디오 재생 파이프라인 에러: {e}")
 
 def should_query_backend(text: str) -> bool:
     keywords = ["기억", "지난번", "언제", "했던", "그때", "이름", "가족", "어제", "저번", "일기", "추억"]
     return any(keyword in text for keyword in keywords)
 
-# --- 🧠 메인 통신 핸들러 ---
+# --- 4. 메인 웹소켓 핸들러 ---
 async def handle_client(websocket, path):
     print("✅ 프론트엔드(React) 웹소켓 연결 성공!")
     
@@ -58,65 +118,34 @@ async def handle_client(websocket, path):
                 data = json.loads(message)
                 if data.get("command") == "force_record":
                     
-                    # 1단계: 음성 인식 (STT)
+                    # 1단계: 듣는 중
                     await websocket.send(json.dumps({"status": "listening"}))
                     user_text = await asyncio.to_thread(recognize_speech_from_mic)
                     print(f"📝 인식된 텍스트: {user_text}")
                     
-                    # 2단계: 대화 상태 분류 및 처리 (처리 중 UI)
+                    # 2단계: 처리 중
                     await websocket.send(json.dumps({"status": "processing"}))
                     
-                    # 예외 처리: 소리를 전혀 인식하지 못했을 때
-                    if user_text.startswith("("):
-                        ai_response = "어르신, 조금 더 크고 또박또박 말씀해 주시겠어요?"
+                    # 🚀 백엔드 폴링 로직 태우기
+                    if should_query_backend(user_text) and not user_text.startswith("("):
+                        ai_response_text, audio_url = await query_backend_with_polling(session, user_text)
                     else:
-                        # RAG 조회가 필요한 문장인지 판단
-                        if should_query_backend(user_text):
-                            print("🌐 [Router] 백엔드 RAG 서버로 조회 요청 시작")
-                            
-                            try:
-                                # 💡 어르신 서비스 특성상 5초 이내에 답변이 안 오면 타임아웃 처리
-                                async with session.post(
-                                    f"{BACKEND_URL}/query", 
-                                    json={
-                                        "user_id": "user_kim",  # 특정 어르신의 기억 매핑용 ID
-                                        "text": user_text
-                                    },
-                                    timeout=aiohttp.ClientTimeout(total=5.0)
-                                ) as resp:
-                                    if resp.status == 200:
-                                        result = await resp.json()
-                                        # 백엔드 API 명세에 맞춰 key값 설정 (ex: answer 또는 response)
-                                        ai_response = result.get("answer", "기억을 떠올리는 중 부품에 작은 혼선이 생겼나 봐요.")
-                                    else:
-                                        print(f"❌ 백엔드 RAG 응답 에러 (Status: {resp.status})")
-                                        ai_response = "죄송해요 어르신, 방금 하신 말씀은 제가 기억 창고에서 찾지 못했어요."
-                            
-                            except asyncio.TimeoutError:
-                                print("❌ [Timeout] 백엔드 RAG 응답 시간 초과 (5초)")
-                                ai_response = "기억을 떠올리는 데 시간이 조금 걸리네요. 조금 이따가 다시 한 번 물어봐 주세요."
-                            except Exception as ce:
-                                print(f"❌ [Connection Error] 백엔드 연결 불가능: {ce}")
-                                ai_response = "인터넷 연결이 잠시 불안정해서 기억을 확인하기 어려워요. 죄송합니다."
-                        
-                        else:
-                            # 로컬 리액션 처리 (단순 대화용 스크립트 분기)
-                            print("⚡ [Router] 로컬 즉시 응답 생성")
-                            ai_response = f"네 어르신, 방금 말씀하신 내용을 들으니 저도 기분이 참 좋네요. 항상 건강하셔요."
-                    
-                    print(f"✅ 최종 확정 응답: {ai_response}")
+                        print("⚡ [Router] 로컬 즉시 응답 (혹은 인식 실패)")
+                        ai_response_text = "네 어르신, 제가 잘 듣고 있습니다."
+                        audio_url = None
 
-                    # 3단계: 음성 출력 및 자막 송신
+                    # 3단계: 말하는 중 (UI 자막 송신)
                     await websocket.send(json.dumps({
                         "status": "speaking",
                         "type": "AI_RESPONSE",
-                        "text": ai_response
+                        "text": ai_response_text
                     }))
                     
-                    # 백엔드 TTS 엔드포인트를 호출하여 스피커로 출력
-                    await fetch_and_play_tts(session, ai_response)
+                    # 4단계: 백엔드에서 받은 실제 음성 출력
+                    if audio_url:
+                        await play_audio_from_url(session, audio_url)
                     
-                    # 4단계: 시스템 대기 모드 복귀
+                    # 5단계: 대기 복귀
                     await websocket.send(json.dumps({"status": "idle"}))
                     print("💤 대기 모드로 전환\n")
 
