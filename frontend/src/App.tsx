@@ -1,3 +1,4 @@
+import ElderPage from './pages/ElderPage';
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
@@ -43,10 +44,13 @@ const App = () => {
   return (
     <BrowserRouter>
       {/* 상태와 로그아웃 함수를 Props로 넘겨줍니다. */}
+      {window.location.pathname !== '/elder' && (
       <Header isLoggedIn={isLoggedIn} onLogout={handleLogout} />
-      <div style={{ padding: '20px' }}>
+      )}
+      <div style={{ padding: window.location.pathname === '/elder' ? '0' : '20px' }}>
         <Routes>
           <Route path="/" element={isLoggedIn ? <DashboardPage /> : <Navigate to="/login" replace />} />
+          <Route path="/elder" element={<ElderPage />} />
 
           <Route path="/login" element={isLoggedIn ? <Navigate to="/" replace /> : <LoginPage setIsLoggedIn={setIsLoggedIn} />} />
           <Route path="/signup" element={<SignupPage />} />

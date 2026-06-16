@@ -24,6 +24,7 @@ uploads/
 *.wav
 *.mp3
 *.log
+node_modules/
 
 node_modules/
 # =========================
