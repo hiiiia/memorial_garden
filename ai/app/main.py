@@ -49,9 +49,11 @@ class AnalysisTriggerRequest(BaseModel):
     callback_url: str
 
 
-class FastChatRequest(BaseModel):
+class FastChatCallbackRequest(BaseModel):
+    job_id: str
     user_text: str
     memory_context: str
+    callback_url: str
 
 def verify_api_token(authorization: str = Header(None)):
     if not authorization:
@@ -516,6 +518,50 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
                 )
 
 
+# ==========================================
+# 3. 빠른 분석 파이프라인
+# ==========================================
+async def process_fast_chat_and_callback(payload: dict):
+    prompt = f"""
+    당신은 어르신을 보살피는 친절하고 따뜻한 손주/말벗입니다.
+    아래 과거 기억을 참고하여 어르신의 말씀에 1~2문장으로 짧고 다정하게 대답해 주세요.
+    
+    [과거 기억]
+    {payload['memory_context']}
+    
+    [어르신 말씀]
+    {payload['user_text']}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": "친절한 AI 말벗입니다. JSON이 아닌 일반 텍스트로만 대답하세요."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7
+        )
+        ai_answer = response.choices[0].message.content.strip()
+        print(f"[AI] ⚡ 빠른 답변 생성 완료. 콜백 전송 시작 (Job: {payload['job_id']})")
+
+        # 2. 분석 완료 시 백엔드로 성공 콜백 전송
+        async with httpx.AsyncClient() as http_client:
+            await http_client.post(
+                payload["callback_url"],
+                json={"status": "COMPLETED", "reply_text": ai_answer, "job_id": payload["job_id"]}
+            )
+            
+    except Exception as e:
+        print(f"[AI Error] 빠른 답변 생성 실패: {e}")
+        # 실패 시 에러 콜백 전송
+        async with httpx.AsyncClient() as http_client:
+            await http_client.post(
+                payload["callback_url"],
+                json={"status": "FAILED", "reply_text": "제가 잠시 딴생각을 하느라 못 들었어요.", "job_id": payload["job_id"]}
+            )
+
+
 @app.get("/")
 def read_root():
     return {"message": "Welcome to AI Analysis Server (Gemini)"}
@@ -536,32 +582,7 @@ async def trigger_analysis(
     return {"message": "Analysis started in background."}
 
 
-@app.post("/api/v1/fast-chat")
-async def generate_fast_reply(request: FastChatRequest):
-    # 그림일기, 점수 분석 다 빼고 오직 '상냥한 대답'만 요구하는 가벼운 프롬프트
-    prompt = f"""
-    당신은 어르신을 보살피는 친절하고 따뜻한 손주/말벗입니다.
-    아래 과거 기억을 참고하여 어르신의 말씀에 1~2문장으로 짧고 다정하게 대답해 주세요.
-    
-    [과거 기억]
-    {request.memory_context}
-    
-    [어르신 말씀]
-    {request.user_text}
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": "친절한 AI 말벗입니다. JSON이 아닌 일반 텍스트로만 대답하세요."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7
-        )
-        ai_answer = response.choices[0].message.content.strip()
-        return {"reply_text": ai_answer}
-        
-    except Exception as e:
-        print(f"[AI Error] 빠른 답변 생성 실패: {e}")
-        raise HTTPException(status_code=500, detail="LLM generation failed")
+@app.post("/api/v1/fast-chat", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_fast_chat(request: FastChatCallbackRequest, background_tasks: BackgroundTasks):
+    background_tasks.add_task(process_fast_chat_and_callback, request.dict())
+    return {"message": "Fast chat started in background."}

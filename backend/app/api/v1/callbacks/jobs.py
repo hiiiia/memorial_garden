@@ -36,6 +36,12 @@ class CallbackRequest(BaseModel):
     status: str
     analysis_data: AnalysisData
 
+# AI 빠른 응답 결과 스키마
+class FastChatCallbackPayload(BaseModel):
+    job_id: str
+    status: str
+    reply_text: str
+    
 # --- 2. 보안 토큰 검증 함수 ---
 AI_SECRET_TOKEN = settings.AI_SECRET_TOKEN
 OPENAI_API_KEY = settings.OPENAI_API_KEY
@@ -212,3 +218,21 @@ async def receive_ai_callback(
             "job_id" : job_id
         }
     )
+    
+@router.post("/{job_id}/fast-chat")
+async def receive_fast_chat_callback(job_id: str, payload: FastChatCallbackPayload):
+    print(f"\n[Backend] 🔔 빠른 대화 콜백 수신 완료! (Job ID: {job_id})")
+    
+    if payload.status == "COMPLETED":
+        # 💡 백엔드에서 직접 TTS 생성 및 MP3 저장 (작성해주신 함수 재사용)
+        audio_url = await generate_tts_audio_edge(payload.reply_text, job_id)
+        
+        if audio_url:
+            print(f"[Backend] ⚡ 실시간 대화 음성 준비 완료!")
+            print(f" -> Text: {payload.reply_text}")
+            print(f" -> Audio URL: {audio_url}")
+            
+            # (TODO) 라즈베리 파이로 완성된 audio_url을 전달하는 로직 필요
+            return {"status": "success"}
+            
+    return {"status": "failed"}
