@@ -1,13 +1,14 @@
 fastapi
 uvicorn
 sqlalchemy
-pymysql
+#pymysql
+psycopg2-binary
+pgvector
 httpx
 python-multipart
 cryptography
 PyJWT
 passlib[bcrypt]
-
 aiofiles
 #openAPI 쓰면 edge-tts는 주석
 edge-tts

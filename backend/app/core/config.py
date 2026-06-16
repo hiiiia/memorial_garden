@@ -13,11 +13,14 @@ class Settings:
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
     DB_HOST: str = os.getenv("DB_HOST", "db") 
     DB_PORT: str = os.getenv("DB_PORT", "3306")
-    DB_NAME: str = os.getenv("DB_NAME", "aicare")
+    DB_NAME: str = os.getenv("DB_NAME", "pj_memorial")
 
     # DB 연결 URL 자동 조합
-    DATABASE_URL: str = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
+    # MariaDB
+    #DATABASE_URL: str = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    # Postgre
+    DATABASE_URL: str = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=disable"
+    
     # AI 중계 서버 주소 불러오기 
     AI_PROXY_URL: str = os.getenv("AI_PROXY_URL", "http://ai:8001")
 
