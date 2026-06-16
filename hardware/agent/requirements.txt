@@ -1,0 +1,7 @@
+SpeechRecognition==3.10.4
+pyaudio==0.2.14
+websockets==12.0
+requests==2.31.0
+rpi-lgpio==0.4  # Pi 5용 GPIO 제어 라이브러리
+aiohttp==3.9.0
+gTTS==2.4.0
