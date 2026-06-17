@@ -48,15 +48,35 @@ async def analyze_with_local_llm(session: aiohttp.ClientSession, raw_text: str):
         "messages": [
             {
                 "role": "system", 
-                "content": "당신은 텍스트를 분석하여 JSON 형태로만 반환하는 라우터입니다. 사용자의 말에 '비밀로 해', '지워' 등의 내용이 있다면 privacy_flag를 true로 설정하고, safe_text에는 구체적 인물/사건을 가린 '[발화 삭제 요청]' 이라고 적으세요. 반드시 지정된 JSON 형식만 출력하세요."
+                "content": "당신은 독거노인의 일상을 나누는 반려 로봇 '기억정원'의 라우터입니다. 사용자의 말에 과거의 기억, 특정 인물, 일정 확인이 필요하면 intent를 'RAG_REQ'로 하고 local_reply를 비우세요. 하지만 단순한 인사, 날씨 이야기, 감정 표현(아프다, 우울하다 등)처럼 가벼운 스몰톡이라면 intent를 'SIMPLE_CHAT'으로 하고, 어르신에게 공감하는 다정하고 짧은 대답(해요체)을 local_reply에 작성하세요. '비밀', '지워' 같은 말이 있으면 privacy_flag를 true로 하세요."
             },
-            {"role": "user", "content": "어제 우리 아들이 돈 빌려달라고 한 건 비밀이야."},
-            {"role": "assistant", "content": '{"intent": "RAG_REQ", "privacy_flag": true, "safe_text": "[사용자 발화 보안 파기됨]", "local_action": "play_filler.mp3"}'},
-            {"role": "user", "content": "지금 몇 시야?"},
-            {"role": "assistant", "content": '{"intent": "LOCAL_CMD", "privacy_flag": false, "safe_text": "지금 몇 시야?", "local_action": "check_time"}'},
-            {"role": "user", "content": raw_text}
+            # --- 퓨샷 1: 과거 기억 검색 (클라우드 RAG행) ---
+            {
+                "role": "user", "content": "저번에 우리 손주가 언제 왔었지?"
+            },
+            {
+                "role": "assistant", "content": '{"intent": "RAG_REQ", "privacy_flag": false, "safe_text": "저번에 우리 손주가 언제 왔었지?", "local_action": "play_filler_hmm", "local_reply": ""}'
+            },
+            # --- 퓨샷 2: 단순 스몰톡/공감 (로컬 자체 처리) ---
+            {
+                "role": "user", "content": "아이고, 오늘 비가 와서 그런가 무릎이 쑤시네."
+            },
+            {
+                "role": "assistant", "content": '{"intent": "SIMPLE_CHAT", "privacy_flag": false, "safe_text": "오늘 비가 와서 그런가 무릎이 쑤시네.", "local_action": null, "local_reply": "어머나, 비가 와서 무릎이 아프시군요. 따뜻하게 찜질을 해보시는 건 어떨까요?"}'
+            },
+            # --- 퓨샷 3: 프라이버시 보호 (클라우드 RAG행) ---
+            {
+                "role": "user", "content": "아까 며느리 흉본 건 지워줘. 남들 알면 안 돼."
+            },
+            {
+                "role": "assistant", "content": '{"intent": "RAG_REQ", "privacy_flag": true, "safe_text": "[사용자 발화 보안 파기됨]", "local_action": "play_filler_ok", "local_reply": ""}'
+            },
+            # --- 실제 사용자 입력 ---
+            {
+                "role": "user", "content": raw_text
+            }
         ],
-        "temperature": 0.0, # 창의성 0% (고정 출력 유도)
+        "temperature": 0.0,
         "response_format": {"type": "json_object"} 
     }
 
@@ -152,31 +172,28 @@ async def handle_client(websocket):
                     await websocket.send(json.dumps({"status": "listening"}))
                     raw_text = await asyncio.to_thread(recognize_speech_from_mic)
                     
-                    # 2. 처리 상태 (UI 업데이트) 및 라우팅 판단
+                    # 1. 처리 상태 (UI 업데이트) 및 라우팅 판단
                     await websocket.send(json.dumps({"status": "processing"}))
                     routing_data = await analyze_with_local_llm(session, raw_text)
                     
-                    # 💡 [핵심 분기망] RAG 연동 vs 엣지 자체 처리
+                    # 💡 [핵심 분기망] 기억 검색(RAG) vs 단순 스몰톡(Local)
                     if routing_data.get("intent") == "RAG_REQ":
-                        print("🔀 [라우터] 외부 지식/장문 대화가 필요하여 클라우드로 분기합니다.")
+                        print("☁️ [라우터] 과거 기억이나 외부 지식이 필요합니다. 클라우드 RAG 서버로 토스합니다.")
                         
-                        # 지연 시간(Latency) 은닉용 로컬 액션 즉시 백그라운드 가동
+                        # 딜레이 은닉용 로컬 추임새 즉시 재생
                         if routing_data.get("local_action"):
-                            asyncio.create_task(play_local_action(routing_data["local_action"]))
+                            asyncio.create_task(play_local_action(routing_data.get("local_action")))
                         
-                        # 백엔드 RAG 질의 후 응답 대기
+                        # 백엔드에 RAG 질의 후 응답 대기
                         ai_response_text, audio_url = await dispatch_to_backend(session, routing_data, raw_text)
                         
                     else:
-                        print("🔀 [라우터] 단순 제어 명령이므로 엣지(Jetson) 단독으로 처리합니다.")
+                        print("🏠 [라우터] 단순 스몰톡/공감 대화입니다. 엣지(Jetson) 단독으로 즉각 대답합니다.")
                         
-                        # 외부로 나가지 않고 내부 스크립트만 실행
-                        if routing_data.get("local_action"):
-                            await play_local_action(routing_data["local_action"])
-                            
-                        # 가벼운 로컬용 자체 응답 생성
-                        ai_response_text = "네 어르신, 원하시는 대로 기기를 조절했어요."
+                        # 🌟 0.5B 모델이 즉석에서 만들어낸 다정한 공감 문구 사용
+                        ai_response_text = routing_data.get("local_reply", "네 어르신, 제가 귀 기울여 듣고 있어요.")
                         audio_url = None
+                        # (단순 스몰톡이므로 딜레이 은닉용 추임새 재생 생략 가능)
 
                     # 3. 말하기 상태 (UI 업데이트 및 답변 텍스트 렌더링)
                     await websocket.send(json.dumps({
@@ -185,13 +202,12 @@ async def handle_client(websocket):
                         "text": ai_response_text
                     }))
                     
-                    # 4. 클라우드에서 만들어준 음성 재생 (있는 경우)
                     if audio_url:
                         await play_audio_from_url(session, audio_url)
                     
-                    # 5. 모든 프로세스 종료 후 대기 상태 복귀
+                    # 4. 모든 프로세스 종료 후 대기 상태 복귀
                     await websocket.send(json.dumps({"status": "idle"}))
-
+                    
         except websockets.exceptions.ConnectionClosed:
             print("❌ [웹소켓] React와의 연결이 해제되었습니다.")
 
