@@ -24,10 +24,19 @@ def chat():
     user_input = request.json.get('message', '')
     
     # 1회 추론으로 멀티 플래그 출력을 강제하기 위한 템플릿 엔지니어링
+    # 0.5B 모델의 딴소리를 원천 차단하는 Few-shot 프롬프트 템플릿
     prompt = f"""<|im_start|>system
-You are an Edge AI router. Analyze the user's intent and output ONLY a valid JSON object. 
+You are a JSON routing AI. Output ONLY valid JSON without any markdown tags or extra text.
 Format: {{"intent": "RAG_REQ" or "LOCAL_CMD", "privacy_flag": true/false, "local_action": "play_filler.mp3" or null}}
 <|im_end|>
+<|im_start|>user
+아까 며느리 흉본 건 지워줘. 비밀이야.<|im_end|>
+<|im_start|>assistant
+{{"intent": "RAG_REQ", "privacy_flag": true, "local_action": "play_filler.mp3"}}<|im_end|>
+<|im_start|>user
+거실 조명 좀 켜줄래?<|im_end|>
+<|im_start|>assistant
+{{"intent": "LOCAL_CMD", "privacy_flag": false, "local_action": "turn_on_light"}}<|im_end|>
 <|im_start|>user
 {user_input}<|im_end|>
 <|im_start|>assistant
@@ -36,10 +45,12 @@ Format: {{"intent": "RAG_REQ" or "LOCAL_CMD", "privacy_flag": true/false, "local
     payload = {
         "prompt": prompt,
         "n_predict": 128,
-        "temperature": 0.1,  # 완벽한 JSON 규격을 위해 생성 다양성을 억제
+        "temperature": 0.0,  # 창의성을 완전히 죽여 기계처럼 대답하게 만듦
         "stop": ["<|im_end|>"]
     }
-
+    
+    
+    
     try:
         # 1. 엣지 가속 sLLM 서버 호출
         response = requests.post(LLM_API_URL, json=payload).json()
