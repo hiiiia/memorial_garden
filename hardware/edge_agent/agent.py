@@ -1,95 +1,123 @@
-import requests
+import asyncio
+import websockets
 import json
-import threading
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import requests
+import time
 
-app = Flask(__name__)
-CORS(app)
+# 엣지 LLM(llama.cpp) 주소
+LLM_API_URL = "http://127.0.0.1:8080/completion"
 
-LLM_API_URL = "[http://127.0.0.1:8080/completion](http://127.0.0.1:8080/completion)"
-
-def handle_local_action(action_code):
-    """[스레드 A] 로컬 기기 제어 및 추임새 오디오 백그라운드 즉시 재생 (Latency Masking)"""
-    if action_code:
-        print(f"🌟 [LOCAL THREAD] 즉시 로컬 오디오 재생 트리거: {action_code}")
-        # 예: os.system(f"aplay /mnt/sdcard/audio/{action_code}")
-
-def send_to_health_db(meta_data):
-    """[스레드 B] 분석 연속성을 보장하기 위한 수치형 메타데이터의 백엔드 전송"""
-    print(f"📊 [META THREAD] 헬스케어 메타데이터 시계열 DB 전송 완료: {meta_data}")
-
-@app.route('/chat', methods=['POST'])
-def chat():
-    user_input = request.json.get('message', '')
+# ==========================================
+# 🎤 하드웨어 제어 모듈 (STT / TTS)
+# ==========================================
+async def start_stt_recording():
+    """
+    [마이크 녹음 및 STT 로직 구현부]
+    실제 환경에서는 여기에 PyAudio, SpeechRecognition, 또는 Whisper API를 연결합니다.
+    """
+    print("🎙️ [하드웨어] 마이크 활성화. 어르신 말씀 듣는 중...")
     
-    # 1회 추론으로 멀티 플래그 출력을 강제하기 위한 템플릿 엔지니어링
-    # 0.5B 모델의 딴소리를 원천 차단하는 Few-shot 프롬프트 템플릿
-    prompt = f"""<|im_start|>system
-You are a JSON routing AI. Output ONLY valid JSON without any markdown tags or extra text.
-Format: {{"intent": "RAG_REQ" or "LOCAL_CMD", "privacy_flag": true/false, "local_action": "play_filler.mp3" or null}}
-<|im_end|>
-<|im_start|>user
-아까 며느리 흉본 건 지워줘. 비밀이야.<|im_end|>
-<|im_start|>assistant
-{{"intent": "RAG_REQ", "privacy_flag": true, "local_action": "play_filler.mp3"}}<|im_end|>
-<|im_start|>user
-거실 조명 좀 켜줄래?<|im_end|>
-<|im_start|>assistant
-{{"intent": "LOCAL_CMD", "privacy_flag": false, "local_action": "turn_on_light"}}<|im_end|>
-<|im_start|>user
-{user_input}<|im_end|>
-<|im_start|>assistant
-"""
+    # 임시 대기 시간 (실제 음성 인식 시간으로 대체됨)
+    await asyncio.sleep(3) 
+    
+    # 테스트용 하드코딩된 음성 인식 결과 반환
+    recognized_text = "오늘 시장에 가서 나물도 사고 참 재밌었어." 
+    print(f"📥 [STT 변환 완료] 인식된 문장: {recognized_text}")
+    
+    return recognized_text
 
-    payload = {
-        "prompt": prompt,
-        "n_predict": 128,
-        "temperature": 0.0,  # 창의성을 완전히 죽여 기계처럼 대답하게 만듦
-        "stop": ["<|im_end|>"]
-    }
+async def play_tts_audio(text):
+    """
+    [TTS 오디오 재생 로직 구현부]
+    실제 환경에서는 gTTS, Google Cloud TTS, 또는 로컬 오디오 재생 명령어(aplay 등)를 연결합니다.
+    """
+    print(f"🔊 [하드웨어] 스피커 재생 시작: {text}")
     
+    # 글자 수에 비례하여 말하는 시간 시뮬레이션 (초당 약 5글자)
+    play_duration = len(text) / 5.0
+    await asyncio.sleep(play_duration) 
     
+    print("🔇 [하드웨어] 스피커 재생 완료")
+
+# ==========================================
+# 🧠 메인 에이전트 라우팅 및 통신 로직
+# ==========================================
+async def chat_handler(websocket):
+    print("✅ [웹소켓] React 프론트엔드 연결 성공!")
     
     try:
-        # 1. 엣지 가속 sLLM 서버 호출
-        response = requests.post(LLM_API_URL, json=payload).json()
-        ai_output = response['content'].strip()
-        
-        # 2. 구조화 JSON 파싱
-        routing_data = json.loads(ai_output)
-        intent = routing_data.get('intent')
-        privacy = routing_data.get('privacy_flag')
-        action = routing_data.get('local_action')
+        async for message in websocket:
+            data = json.loads(message)
+            
+            # 1️⃣ React에서 '말하기' 버튼(force_record)을 눌렀을 때
+            if data.get('command') == 'force_record':
+                
+                # [상태 업데이트] UI를 'listening(말씀을 듣고 있어요...)'으로 변경
+                await websocket.send(json.dumps({"status": "listening"}))
+                
+                # 마이크를 열고 어르신 말씀 듣기 (STT)
+                user_text = await start_stt_recording()
 
-        # 3. 비동기/멀티스레딩 기반 병렬 디스패치 전개
-        # 로컬 오디오 즉각 재생 실행 (사용자 체감 Latency 0초 구현)
-        threading.Thread(target=handle_local_action, args=(action,)).start()
-        
-        # VAD 및 통계적 수치 분리 추출 (예시 파라미터 백엔드 전송)
-        mock_meta = {"wpm": 38, "pause_duration": 3.1, "depression_score": 0.75}
-        threading.Thread(target=send_to_health_db, args=(mock_meta,)).start()
+                # 2️⃣ [상태 업데이트] UI를 'processing(생각하는 중이에요...)'으로 변경
+                await websocket.send(json.dumps({"status": "processing"}))
+                
+                # LLM 프롬프트 세팅 (어르신 맞춤형 다정한 챗봇 페르소나 적용)
+                prompt = f"""<|im_start|>system
+당신은 독거노인을 위한 따뜻하고 다정한 반려 로봇 '기억정원'입니다. 
+어르신의 말에 공감하고, 짧고 이해하기 쉬운 한국어(해요체)로 대답하세요. 최대 2문장으로 짧게 말하세요.
+<|im_end|>
+<|im_start|>user
+{user_text}<|im_end|>
+<|im_start|>assistant
+"""
+                payload = {
+                    "prompt": prompt,
+                    "n_predict": 128,
+                    "temperature": 0.6,
+                    "stop": ["<|im_end|>"]
+                }
 
-        # 4. 프라이버시 마스킹 처리 및 최종 분기 반환
-        if privacy:
-            print("🚨 [PRIVACY DROP] 민감 대화 데이터 감지됨. 원본 텍스트 로컬 메모리에서 즉각 파기 완료.")
-            return jsonify({
-                "status": "success",
-                "edge_decision": intent,
-                "forward_text": "[USER_REQUESTED_PRIVACY_DROP]",  # 시맨틱 데이터 마스킹
-                "message": "비식별화 보호 처리 및 로컬 제어 완료"
-            })
-        else:
-            return jsonify({
-                "status": "success",
-                "edge_decision": intent,
-                "forward_text": user_input,
-                "message": "클라우드 런타임 연동 포워딩 준비 완료"
-            })
+                try:
+                    # 엣지 LLM으로 추론 요청 (동기 함수인 requests를 비동기 루프에서 안전하게 실행)
+                    loop = asyncio.get_running_loop()
+                    response = await loop.run_in_executor(
+                        None, 
+                        lambda: requests.post(LLM_API_URL, json=payload).json()
+                    )
+                    
+                    ai_text = response['content'].strip()
+                    print(f"🤖 [LLM 응답 생성] {ai_text}")
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+                    # 3️⃣ [상태 업데이트] UI를 'speaking(이야기하고 있어요...)'으로 변경하고 텍스트 전달
+                    await websocket.send(json.dumps({
+                        "status": "speaking",
+                        "type": "AI_RESPONSE",
+                        "text": ai_text
+                    }))
 
-if __name__ == '__main__':
-    # Flask 에이전트 구동 (포트 5000)
-    app.run(host='0.0.0.0', port=5000)
+                    # 스피커로 음성 출력 (TTS)
+                    await play_tts_audio(ai_text)
+
+                    # 4️⃣ [상태 업데이트] 대화가 끝났으므로 대기 상태(idle)로 복귀
+                    await websocket.send(json.dumps({"status": "idle"}))
+                    print("🏁 [대화 사이클 완료] 다음 입력을 대기합니다.")
+
+                except Exception as e:
+                    error_msg = f"LLM 연동 에러가 발생했습니다: {str(e)}"
+                    print(f"❌ [에러] {error_msg}")
+                    await websocket.send(json.dumps({
+                        "status": "idle",
+                        "type": "AI_RESPONSE",
+                        "text": "어르신, 잠시 생각이 엉켰어요.\n다시 말씀해 주시겠어요?"
+                    }))
+
+    except websockets.exceptions.ConnectionClosed:
+        print("❌ [웹소켓] React 프론트엔드 연결 해제됨")
+
+async def main():
+    print("🚀 [기억정원 Agent] ws://localhost:8765 에서 대기 중...")
+    async with websockets.serve(chat_handler, "localhost", 8765):
+        await asyncio.Future()
+
+if __name__ == "__main__":
+    asyncio.run(main())
