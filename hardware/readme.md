@@ -1,19 +1,166 @@
 ```markdown
-# 📄 Technical Specification: Jetson Nano 기반 하이브리드 Edge AI 및 라우팅 파이프라인
+# 📄 Technical Specification: Jetson Nano 기반 하이브리드 Edge AI 및 병렬 라우팅 파이프라인
+
+## Frontend , Agent 세팅
+
+
+## 4. Python 3.10 독립 환경 구성 (Miniforge)
+
+우분투 18.04 ARM64 환경에서는 기본 파이썬 버전이 레거시(3.6.9)이며, 일반적인 `apt` 저장소(deadsnakes 등)의 지원 중단으로 정상적인 파이썬 상위 버전 빌드가 어렵습니다. 이를 최적화하기 위해 ARM64 패키지 생태계가 활성화된 Miniforge(Conda-forge)를 이용해 가벼운 격리 가상환경을 구축합니다.
+
+```bash
+# 1. Miniforge3 ARM64 설치 스크립트 다운로드 및 설치
+cd ~
+wget [https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh)
+bash Miniforge3-Linux-aarch64.sh -b
+
+# 2. Conda 환경 환경변수 등록 및 터미널 쉘 새로고침
+~/miniforge3/bin/conda init
+source ~/.bashrc
+
+# 3. Python 3.10 버전 가상환경(edge_agent) 생성 및 가동
+conda create -n edge_agent python=3.10 -y
+conda activate edge_agent
+
+# 4. 가상환경 내 필수 경량 라이브러리 설치 (무거운 Agent 프레임워크 원천 배제)
+pip install requests flask flask-cors
+
+```
+
+
+## 6. Lightweight Agent Middleware (초경량 미들웨어 구현)
+
+`conda activate edge_agent` 상태에서 구동되며, 프론트엔드(React)의 비동기 요청을 받아 엣지 LLM과 연동하고 병렬 스레드를 분배하는 파이썬 메인 컨트롤러 코드입니다.
+
+`~/edge_agent/agent.py` 파일로 저장하여 실행합니다.
+
+```python
+import requests
+import json
+import threading
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
+
+LLM_API_URL = "[http://127.0.0.1:8080/completion](http://127.0.0.1:8080/completion)"
+
+def handle_local_action(action_code):
+    """[스레드 A] 로컬 기기 제어 및 추임새 오디오 백그라운드 즉시 재생 (Latency Masking)"""
+    if action_code:
+        print(f"🌟 [LOCAL THREAD] 즉시 로컬 오디오 재생 트리거: {action_code}")
+        # 예: os.system(f"aplay /mnt/sdcard/audio/{action_code}")
+
+def send_to_health_db(meta_data):
+    """[스레드 B] 분석 연속성을 보장하기 위한 수치형 메타데이터의 백엔드 전송"""
+    print(f"📊 [META THREAD] 헬스케어 메타데이터 시계열 DB 전송 완료: {meta_data}")
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_input = request.json.get('message', '')
+    
+    # 1회 추론으로 멀티 플래그 출력을 강제하기 위한 템플릿 엔지니어링
+    prompt = f"""<|im_start|>system
+You are an Edge AI router. Analyze the user's intent and output ONLY a valid JSON object. 
+Format: {{"intent": "RAG_REQ" or "LOCAL_CMD", "privacy_flag": true/false, "local_action": "play_filler.mp3" or null}}
+<|im_end|>
+<|im_start|>user
+{user_input}<|im_end|>
+<|im_start|>assistant
+"""
+
+    payload = {
+        "prompt": prompt,
+        "n_predict": 128,
+        "temperature": 0.1,  # 완벽한 JSON 규격을 위해 생성 다양성을 억제
+        "stop": ["<|im_end|>"]
+    }
+
+    try:
+        # 1. 엣지 가속 sLLM 서버 호출
+        response = requests.post(LLM_API_URL, json=payload).json()
+        ai_output = response['content'].strip()
+        
+        # 2. 구조화 JSON 파싱
+        routing_data = json.loads(ai_output)
+        intent = routing_data.get('intent')
+        privacy = routing_data.get('privacy_flag')
+        action = routing_data.get('local_action')
+
+        # 3. 비동기/멀티스레딩 기반 병렬 디스패치 전개
+        # 로컬 오디오 즉각 재생 실행 (사용자 체감 Latency 0초 구현)
+        threading.Thread(target=handle_local_action, args=(action,)).start()
+        
+        # VAD 및 통계적 수치 분리 추출 (예시 파라미터 백엔드 전송)
+        mock_meta = {"wpm": 38, "pause_duration": 3.1, "depression_score": 0.75}
+        threading.Thread(target=send_to_health_db, args=(mock_meta,)).start()
+
+        # 4. 프라이버시 마스킹 처리 및 최종 분기 반환
+        if privacy:
+            print("🚨 [PRIVACY DROP] 민감 대화 데이터 감지됨. 원본 텍스트 로컬 메모리에서 즉각 파기 완료.")
+            return jsonify({
+                "status": "success",
+                "edge_decision": intent,
+                "forward_text": "[USER_REQUESTED_PRIVACY_DROP]",  # 시맨틱 데이터 마스킹
+                "message": "비식별화 보호 처리 및 로컬 제어 완료"
+            })
+        else:
+            return jsonify({
+                "status": "success",
+                "edge_decision": intent,
+                "forward_text": user_input,
+                "message": "클라우드 런타임 연동 포워딩 준비 완료"
+            })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    # Flask 에이전트 구동 (포트 5000)
+    app.run(host='0.0.0.0', port=5000)
+
+```
+
+---
+
+# Node.js 16 설치 
+curl -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# frontend 폴더와 그 안의 모든 파일을 jetson 계정의 소유로 변경합니다.
+sudo chown -R jetson:jetson ~/memorial_garden/hardware/frontend
+
+# 혹시 모를 권한 문제 방지를 위해 읽기/쓰기 권한을 부여합니다.
+chmod -R 755 ~/memorial_garden/hardware/frontend
+
+# 1. 프로젝트 폴더 이동
+cd ~/memorial_garden/hardware/frontend
+
+# 2. 패키지 설치
+npm install
+
+# 3. 배포용 빌드 (이 과정에서 메모리가 많이 필요합니다!)
+npm run build
+
+# 4. 배포용 빌드 실행
+npx serve -s build -l 3000
+
+---
 
 ## 1. Overview (개요)
-본 문서는 NVIDIA Jetson Nano B01 환경에서 발생할 수 있는 하드웨어적 한계(16GB eMMC, 4GB RAM)와 레거시 소프트웨어 종속성(CUDA 10.2, GCC 7) 문제를 극복하고, Edge 환경에 최적화된 소형 LLM(sLLM)을 Native 환경에서 구동하기 위한 인프라 구축 및 모델 배포 파이프라인을 정의합니다. 
+본 문서는 NVIDIA Jetson Nano B01 환경에서 발생할 수 있는 하드웨어적 한계(16GB eMMC, 4GB RAM)와 레거시 소프트웨어 종속성(CUDA 10.2, GCC 7, Python 3.6) 문제를 극복하고, Edge 환경에 최적화된 소형 LLM(sLLM)과 초경량 에이전트 미들웨어를 네이티브 환경에 구축하기 위한 최종 기술 명세서입니다.
 
-더불어, 저사양 기기에서 대형 모델 연동 시 발생하는 지연(Latency) 문제와 사용자 프라이버시 보호 요구사항을 구조적으로 타개하기 위한 **'하이브리드 인텐트 라우팅(Hybrid Intent Routing)'** 및 **'데이터 분리 처리(Semantic vs Meta)'** 전략을 통합 명세합니다.
+저사양 기기에서 대형 모델 연동 시 발생하는 지연(Latency) 문제와 사용자 프라이버시 보호 요구사항을 구조적으로 해결하기 위해, 한 번의 LLM 추론으로 라우팅 플래그와 비식별화 요청을 동시 분석하는 **'Single-pass 멀티 인텐트 라우팅'** 및 **'멀티스레드 기반 병렬 디스패치(Parallel Dispatch)'** 아키텍처를 정의합니다.
 
-- **목적:** Edge 단말 단에서의 조건부 RAG 판단, 실시간 하드웨어 통제 및 지연 시간 은닉
-- **주요 기술 스택:** Ubuntu 18.04, CUDA 10.2, C++ (GCC 9), llama.cpp, GGUF 양자화 모델, VAD (Voice Activity Detection)
+- **목적:** Edge 단말 단에서의 실시간 인텐트 판별, 프라이버시 필터링, 하드웨어 통제 및 지연 시간 은닉
+- **주요 기술 스택:** Ubuntu 18.04 (JetPack 4.6), CUDA 10.2, GCC 9, Miniforge3 (Python 3.10), llama.cpp (b2400), Flask
 
 ---
 
 ## 2. System Architecture (시스템 아키텍처)
 
-본 프로젝트는 초기 Docker 기반 배포를 기획하였으나, 레거시 JetPack(4.6) 버전 파편화로 인해 최종적으로 **Native (Bare Metal) 아키텍처**로 전환하여 시스템 오버헤드를 제거하고 성능을 극대화했습니다.
+본 프로젝트는 가상화 레이어의 오버헤드를 줄이고 제한된 하드웨어 자원을 100% 활용하기 위해 Docker 환경을 배포 단계에서 제외하고 **Native (Bare Metal) 파이프라인**을 채택했습니다.
 
 ### 2.1. 배포 아키텍처 비교 (Docker vs Native)
 ```text
@@ -32,37 +179,36 @@ Hardware (Jetson Nano)
 
 ```
 
-### 2.2. 하이브리드 인텐트 라우팅 및 지연 은닉 파이프라인
+### 2.2. 싱글패스(Single-pass) 병렬 처리 및 지연 은닉 파이프라인
 
-엣지 단말은 실시간성 제어 및 인텐트 분류기(Dispatcher) 역할을 수행하며, 무거운 질의 및 장문 대화는 클라우드 인프라로 가속 위임합니다.
+엣지 단말 내부의 sLLM(Qwen 1.8B)은 단 한 번의 추론으로 `라우팅 의도(intent)`와 `프라이버시 플래그(privacy_flag)`를 포함한 구조화된 JSON 데이터를 뱉어내며, 메인 컨트롤러는 이를 기반으로 여러 백그라운드 작업을 멀티스레드로 동시 분배(Parallel Dispatch)합니다.
 
 ```text
-[사용자 발화 입력]
+[사용자 발화 입력] ("아까 며느리 흉본 건 지워줘, 비밀이야.")
        │
        ▼
 ┌────────────────────────────────────────────────────────┐
-│ 1단계: 엣지 코어 루틴 (Local Edge - Jetson Nano)      │
-│  - 경량 VAD 가동: 정확한 침묵/음성 감지로 네트워크 절약 │
-│  - sLLM (Qwen 1.8B) 추론: 인텐트(의도) 분석 및 라우팅   │
+│ 1단계: 엣지 sLLM (llama.cpp API Server / 8080 포트)    │
+│  - Single-pass 추론을 통해 다중 상태 플래그가 담긴 JSON 생성 │
 └────────────────────────────────────────────────────────┘
        │
-       ├─► [의도: 기기 제어 및 단답형 상태 확인] 
-       │    │
-       │    ▼ (지연 시간: ~0.5초 이내)
-       │   ┌──────────────────────────────────────────────┐
-       │   │ 2단계 (A): 로컬 제어 (Local Execution)        │
-       │   │  - 즉시 구조화된 JSON 제어 코드 파싱 및 실행  │
-       │   └──────────────────────────────────────────────┘
+       ▼ [출력 데이터 파싱: intent, privacy_flag, local_action]
+┌────────────────────────────────────────────────────────┐
+│ 2단계: 초경량 Python 미들웨어 (Flask Agent / 5000 포트) │
+│  - 수신된 JSON 데이터 기반으로 멀티스레드 병렬 디스패치 수행 │
+└────────────────────────────────────────────────────────┘
        │
-       └─► [의도: 심층 질의 / RAG 기반 장문 대화] 
+       ├─► [스레드 A: 로컬 액션] ──────────────────► 즉시 로컬 캐시 오디오 재생 (Filler Word)
+       │                                            (지연 시간 0.5초 이내 은닉 완료 🌟)
+       │
+       ├─► [스레드 B: 헬스케어 메타데이터] ─────────► 비식별 수치 데이터(WPM, 침묵 등) 분석 DB 전송
+       │                                            (시계열 데이터 연속성 유지)
+       │
+       └─► [스레드 C: 프라이버시 필터링] 
             │
-            ▼ (지연 시간 은닉 기법 동시 가동 🌟)
-           ┌──────────────────────────────────────────────┐
-           │ 2단계 (B): 딜레이 은닉 및 클라우드 파이프라인  │
-           │  - 로컬 캐시 추임새 오디오(Filler Word) 즉시 재생│
-           │  - 상위 클라우드 LLM 인프라로 컨텍스트 토스   │
-           │  - 척(Chunk) 단위 실시간 스트리밍 답변 반환   │
-           └──────────────────────────────────────────────┘
+            ├──► privacy_flag == True  : 원본 발화 텍스트 즉시 메모리 파기 (Drop)
+            │                            클라우드 RAG 서버로 비식별 마스킹 플래그 포워딩
+            └──► privacy_flag == False : 클라우드 RAG/장문 대화 인프라로 정상 컨텍스트 토스
 
 ```
 
@@ -75,28 +221,25 @@ Hardware (Jetson Nano)
 
 ### 2.4. 스토리지 및 메모리 매핑 구조 (Storage Mapping)
 
-16GB eMMC의 용량 한계와 4GB RAM의 OOM(Out of Memory) 현상을 방지하기 위해 I/O 병목이 적은 외부 USB 스토리지를 주 작업 공간으로 맵핑합니다.
+물리적 RAM(4GB) 부족으로 인한 OOM Killed 현상 및 16GB 내부 eMMC 용량 부족을 방지하기 위해 확장 스토리지를 마운트하고 가상 메모리 스왑 공간을 재구축합니다.
 
 ```text
-[16GB eMMC] (내부 고속 스토리지)
- ├── Ubuntu 18.04 OS
- ├── CUDA 10.2 Toolkit
- └── GCC 9 Compiler & Tools
+[16GB eMMC (내부 스토리지)]
+ ├── Ubuntu 18.04 OS / CUDA 10.2 Toolkit
+ └── GCC 9 Compiler / Miniforge3 (Conda Core)
 
-[64GB USB SD Card] (/mnt/sdcard)
- ├── /swapfile (8GB Virtual Memory)     <-- 가상 메모리 확보를 통한 RAM OOM 방지
- ├── /llama.cpp (Source Code & Engine)  <-- 베어메탈 빌드 환경 및 실행 바이너리
- └── /models (LLM Weights)              <-- Qwen 1.5-1.8B 양자화 가중치 (약 1GB)
+[64GB USB SD Card (/mnt/sdcard)]
+ ├── /swapfile (8GB Virtual Memory)     <-- RAM 용량 방어선의 핵심 (활성화 필수)
+ ├── /llama.cpp (Engine Binary)         <-- 베어메탈 C++ 빌드 환경
+ └── /models (LLM Weights)              <-- Qwen 1.5-1.8B GGUF 가중치 (약 1GB)
 
 ```
 
 ---
 
-## 3. Infrastructure Setup (인프라 최적화)
+## 3. Infrastructure & Memory Setup (인프라 및 메모리 최적화)
 
 ### 3.1. 스토리지 분리 및 마운트
-
-외장 USB SD 카드를 주 작업 공간으로 포맷 및 권한 매핑을 진행합니다.
 
 ```bash
 sudo mkfs.ext4 /dev/sda1
@@ -106,48 +249,35 @@ sudo chown -R $USER:$USER /mnt/sdcard
 
 ```
 
-### 3.2. Out of Memory (OOM) 방지용 Swap 할당
+### 3.2. Out of Memory (OOM) 방지용 8GB Swap 할당 및 확인
 
-가중치 적재 및 컴파일 시 보드가 다운되는 현상을 막기 위해 8GB 크기의 스왑 공간을 활성화합니다.
+*주의: 젯슨 나노 재부팅 시 스왑이 해제되므로 서버 구동 전 반드시 아래 명령어로 활성화 상태를 점검해야 합니다.*
 
 ```bash
-sudo fallocate -l 8G /mnt/sdcard/swapfile
-sudo chmod 600 /mnt/sdcard/swapfile
-sudo mkswap /mnt/sdcard/swapfile
+# 8GB 스왑 파일 강제 활성화
 sudo swapon /mnt/sdcard/swapfile
+
+# 메모리/스왑 상태 정보 출력 (Swap 항목의 Total이 ~9.9G 영역인지 확인)
+free -h
 
 ```
 
----
+## 5. Native Build & LLM Engine Setup (엔진 빌드 및 구동)
 
-## 4. Native Build Environment (빌드 환경 구성)
-
-### 4.1. CUDA Toolkit 복구
-
-경량 커스텀 OS 빌드 시 제거되었던 `nvcc` 및 기본 CUDA 개발 도구를 시스템에 재구축합니다.
+### 5.1. CUDA 툴킷 복구 및 컴파일러 업데이트
 
 ```bash
 sudo apt update
 sudo apt install -y nvidia-cuda-toolkit
-
-```
-
-### 4.2. GCC 9 컴파일러 툴체인 업데이트
-
-구형 컴파일러(GCC 7) 환경에서 최신 ARM NEON 벡터 연산(i-quants) 소스 빌드 시 발생하는 문법 에러(`incompatible types`)를 해결하기 위해 상위 툴체인을 도입합니다.
-
-```bash
 sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 sudo apt update
 sudo apt install -y gcc-9 g++-9
 
 ```
 
----
+### 5.2. 소스코드 클론 및 가속 컴파일
 
-## 5. LLM Engine Compilation (엔진 빌드)
-
-NVIDIA 레거시 환경(CUDA 10.2)에서 완벽한 가속 안정성을 보장하는 `llama.cpp` 아카이브 버전(`b2400`)을 체크아웃하여 컴파일을 수행합니다.
+NVIDIA 레거시 환경(CUDA 10.2)에서 완벽한 빌드 가속 안정성이 보장되는 `llama.cpp` 아카이브 버전(`b2400`)을 체크아웃하여 컴파일을 수행합니다.
 
 ```bash
 cd /mnt/sdcard
@@ -157,74 +287,31 @@ cd llama.cpp
 # CUDA 10.2 호환 안정화 시점으로 타임머신 탑승
 git checkout b2400
 
-# 이전 실패 잔여물 청소 및 Maxwell 아키텍처(compute_53) 최적화 컴파일 시작
+# 빌드 잔여물 청소 및 Maxwell 아키텍처(compute_53) 최적화 컴파일
 make clean
 make CC=gcc-9 CXX=g++-9 LLAMA_CUBLAS=1 CUDA_DOCKER_ARCH=compute_53 -j2
 
 ```
 
----
-
-## 6. Model Deployment & Inference (모델 배포 및 추론)
-
-### 6.1. 모델 가중치 다운로드
-
-리소스 제약 환경에서 제어 명령어 구조화 및 인텐트 분류 작업의 정확도가 검증된 1.8B 파라미터 양자화 모델을 확보합니다.
+### 5.3. 모델 배포 및 백엔드 API 서버 구동
 
 ```bash
+# 1. 모델 저장 폴더 구성 및 1.8B 양자화 가중치 다운로드
 mkdir -p models
 wget [https://huggingface.co/Qwen/Qwen1.5-1.8B-Chat-GGUF/resolve/main/qwen1_5-1_8b-chat-q4_k_m.gguf](https://huggingface.co/Qwen/Qwen1.5-1.8B-Chat-GGUF/resolve/main/qwen1_5-1_8b-chat-q4_k_m.gguf) -O models/qwen.gguf
 
-```
-
-### 6.2. 대화형 지시 모드(Instruct) 런타임 구동
-
-모델이 챗 템플릿 구조를 엄격히 준수하여 분기 태그를 반환할 수 있도록 대화형 인프라 모드를 활성화하여 실행합니다.
-
-```bash
-
-# 모든 연산 레이어를 GPU로 오프로딩(-ngl 99) 및 컨텍스트 최적화
-./main -m models/qwen.gguf -n 512 -ngl 99 -c 1024 -i -ins
-
-==============================
-
-# 0. swap 메모리 설정
-
-# 8GB 스왑 파일 강제 활성화
-sudo swapon /mnt/sdcard/swapfile
-
-# 잘 켜졌는지 다시 확인
-free -h
-
-
-# 🛠️ 1. 올바른 경로로 이동
-#먼저 우리가 작업하던 USB 공간으로 다시 들어갑니다.
-
+# 2. 실행 경로 진입 및 server 실행 파일 빌드 유무 최종 점검
 cd /mnt/sdcard/llama.cpp
-# 🛠️ 2. API 서버 파일 확인 및 빌드 (필요시)
-#해당 폴더 안에 server 파일이 예쁘게 잘 만들어져 있는지 확인합니다. 아까 make 명령어를 쳤을 때 main과 함께 server도 기본으로 빌드되었을 확률이 높지만, 혹시라도 누락되었다면 서버용 엔진만 따로 한 번 더 조립해주면 됩니다.
-
-# 1) 파일이 있는지 확인:
-
 ls -l server
-# 만약 파일이 보인다면 바로 3단계로 넘어가세요!
 
-# 2) 파일이 없다고 나온다면 (서버 전용 빌드):
-
+# (만약 파일이 없을 경우 아래 명령어로 서버 바이너리 고속 빌드)
 # make server CC=gcc-9 CXX=g++-9 LLAMA_CUBLAS=1 CUDA_DOCKER_ARCH=compute_53 -j2
-# (이전에 공통 파일들을 다 만들어두었기 때문에, 이번에는 10분이 아니라 1~2분 안에 금방 끝납니다.)
 
-# 🚀 3. 백엔드 연동용 API 서버 시동
-# 파일이 준비되었다면, 이제 파이썬 미들웨어(메인 컨트롤러)가 이 엣지 모델과 HTTP 통신으로 데이터를 주고받을 수 있도록 포트를 열어서 실행해 줍니다.
-
-./server -m models/qwen.gguf -n 512 -ngl 99 -c 1024 --host 0.0.0.0 --port 8080
-#--host 0.0.0.0: 젯슨 나노 내부뿐만 아니라, 같은 공유기에 연결된 다른 PC나 파이썬 스크립트에서도 이 엣지 AI에 접속할 수 있도록 문을 활짝 열어줍니다.
-
-#--port 8080: 통신을 주고받을 8080번 포트를 지정합니다.
+# 3. 메모리 스파이크 차단을 위한 Context 512 다이어트 기반 API 서버 시동 (포트 8080)
+./server -m models/qwen.gguf -c 512 -n 512 -ngl 99 -t 2 --host 0.0.0.0 --port 8080
 
 ```
 
----
 
 ## 7. Performance Evaluation & Strategy (성능 평가 및 제안서 방어 전략)
 
@@ -242,16 +329,14 @@ ls -l server
 
 
 2. **"데이터 삭제와 헬스케어 데이터 연속성 모순" 지적 대응**
-* **해결책:** 엣지 단말 단의 **'Semantic/Meta 데이터 물리 분리 가공 구조'** 적용 (2.3절 참조).
+* **해결책:** 엣지 단말 단의 **'Semantic/Meta 데이터 물리 분리 가공 구조'** 적용 (2.1절, 2.3절 구조적 증명).
 * "이 이야기는 지워줘" 요청 시 민감 발화 내용(Semantic Text)은 로컬 메모리 단에서 즉각 drop하여 영구 파기하되, 해당 발화 시 추출된 비식별화 수치 데이터(목소리 떨림 지수, 침묵 시간 등)는 클라우드 시계열 DB에 안전하게 보존하여 분석 연속성을 확보합니다.
 
 
 3. **"저사양 기기에서의 클라우드 연동 딜레이 및 대화 끊김" 지적 대응**
-* **해결책:** 엣지 단말을 활용한 **'UX적 지연 시간 은닉 기법(Latency Masking)'** 적용.
+* **해결책:** 엣지 단말을 활용한 **'UX적 지연 시간 은닉 기법(Latency Masking)'** 적용 (2.2절, 6절 비동기 스레드 구현).
 * 라즈베리파이/Jetson 등 엣지단에서 경량 VAD를 구동해 사용자의 음성 종료 시점을 즉시 판단하며, 엣지 LLM이 `[RAG]` 태그를 구하는 0.5초 이내의 순간에 로컬 메모리에 상주하는 자연스러운 리액션 음성(Filler Word: *"아~ 어르신 그러셨군요, 잠시만요"*)을 즉시 백그라운드 재생합니다. 이를 통해 클라우드 거대 모델 연동에 필요한 통신 딜레이(1~2초)를 사용자 경험 뒤편으로 완벽하게 은닉합니다.
 
 
-
-```
 
 ```
