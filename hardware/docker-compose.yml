@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.2'
 
 services:
   # 1. 파이썬 하드웨어 제어 에이전트 (오디오, GPIO, 로컬 웹소켓)
