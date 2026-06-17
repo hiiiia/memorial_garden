@@ -8,8 +8,8 @@ import tempfile
 import time
 
 # 🔗 환경 설정
-BACKEND_URL = "http://host.docker.internal:8000"
-LOCAL_LLM_URL = "http://localhost:8000/v1/chat/completions" # llama.cpp 서버 주소
+BACKEND_URL = os.getenv("BACKEND_URL", "http://192.168.1.82:8000") 
+LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://host.docker.internal:8080/v1/chat/completions")
 DEPENDENT_ID = "dep_003" 
 
 # --- 1. [로컬] STT 함수 (더미 제거, 실제 마이크 연동) ---
