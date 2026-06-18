@@ -7,6 +7,6 @@ class Settings:
     DEPENDENT_ID: str = os.getenv("DEPENDENT_ID", "dep_003")
     
     # Bearer 글자는 제외하고 순수 토큰 값만 환경변수로 관리하는 것이 깔끔합니다.
-    HW_TOKEN: str = os.getenv("AI_SECRET_TOKEN", "default-token")
+    HW_TOKEN: str = os.getenv("HW_TOKEN", "default-token")
 
 settings = Settings()
