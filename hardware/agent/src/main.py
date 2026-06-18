@@ -93,7 +93,7 @@ async def dispatch_to_backend_async_log(session: aiohttp.ClientSession, routing_
     }
     
     headers = {
-        "Authorization": os.getenv("HW_TOKEN","loPhIPNsWtWZg7bFp_EGU_F1djsrVyhtg0TuuMRSnLE") 
+        "Authorization": os.getenv("HW_TOKEN", "Bearer "+"loPhIPNsWtWZg7bFp_EGU_F1djsrVyhtg0TuuMRSnLE") 
     }
     
     try:
