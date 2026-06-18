@@ -82,26 +82,30 @@ async def play_local_action(action_file: str):
 # ☁️ 4. [클라우드] 백엔드 심층 분석 로깅 (비동기)
 # ==========================================
 async def dispatch_to_backend_async_log(session: aiohttp.ClientSession, routing_data: dict, raw_text: str):
-    """
-    어르신에게 답변이 나간 직후, 백그라운드에서 백엔드 심층 분석 파이프라인으로 데이터를 던집니다.
-    """
     final_text = routing_data["safe_text"] if routing_data.get("privacy_flag") else raw_text
-    
-    # 추후 백엔드의 실제 로깅/분석 엔드포인트에 맞춰 URL 변경 가능
     log_url = f"{AI_SERVER_URL}/api/v1/analyze" 
+    
     payload = {
         "job_id": f"job_{int(time.time())}",
         "user_id": DEPENDENT_ID,
         "file_path": "dummy_path_for_text_only.wav",
-        "callback_url": "http://localhost:8000/internal/callback" # 임시
+        "callback_url": "http://localhost:8000/internal/callback"
+    }
+    
+    headers = {
+        "Authorization": os.getenv("HW_TOKEN","loPhIPNsWtWZg7bFp_EGU_F1djsrVyhtg0TuuMRSnLE") 
     }
     
     try:
-        async with session.post(log_url, json=payload, timeout=5.0) as resp:
+        # 🌟 수정됨: headers=headers 추가
+        async with session.post(log_url, json=payload, headers=headers, timeout=5.0) as resp:
             if resp.status in (200, 202):
                 print("📨 [Background Log] 심층 분석용 헬스케어 메타데이터 적재 요청 완료")
+            else:
+                print(f"⚠️ [Background Log] 로깅 거절됨 (상태 코드: {resp.status})")
     except Exception as e:
         print(f"❌ [Background Log] 백엔드 로깅 실패: {e}")
+
 
 # ==========================================
 # 🔀 5. 메인 웹소켓 컨트롤러
