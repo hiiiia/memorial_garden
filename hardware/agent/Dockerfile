@@ -19,10 +19,16 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 파이썬 패키지 설치
+# 파이썬 패키지 목록 복사 (도커 캐시 활용을 위해 소스코드보다 먼저 복사)
 COPY requirements.txt .
+
+# 무거운 NVIDIA GPU 패키지를 막기 위해 가벼운 CPU 전용 버전을 먼저 설치합니다.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# 그 다음 나머지 패키지(ChromaDB, Sentence-Transformers 등)를 설치합니다.
+# 이미 CPU용 PyTorch가 깔려 있으므로 무거운 GPU 파일을 다운로드하지 않고 스킵합니다.
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 소스 코드 복사 (모듈화된 src 폴더 전체를 복사)
 COPY ./src ./src
