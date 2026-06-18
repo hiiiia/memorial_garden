@@ -16,8 +16,11 @@ class LocalMemoryDB:
         
         # 3. 한국어 특화 경량 임베딩 모델 로드
         # 주의: 컨테이너 최초 실행 시 모델을 다운로드하느라 1~2분 정도 걸릴 수 있습니다.
-        print("🧠 [DB Init] 한국어 임베딩 모델 로드 중 (snunlp/KR-SBERT-VCC-STS-B)...")
-        self.embedding_model = SentenceTransformer('snunlp/KR-SBERT-VCC-STS-B')
+        # 3. 한국어 특화 경량 임베딩 모델 로드
+        print("🧠 [DB Init] 한국어 임베딩 모델 로드 중 (jhgan/ko-sroberta-multitask)...")
+        
+        # 완전 무료/공개되어 있으며 한국어 성능이 매우 뛰어난 모델
+        self.embedding_model = SentenceTransformer('jhgan/ko-sroberta-multitask')
         
         # 4. 기억을 담을 컬렉션(테이블) 생성 또는 가져오기
         self.collection = self.client.get_or_create_collection(

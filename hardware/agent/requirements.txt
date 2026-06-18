@@ -6,3 +6,5 @@ rpi-lgpio==0.4  # Pi 5용 GPIO 제어 라이브러리
 aiohttp==3.9.0
 gTTS==2.4.0
 openai
+chromadb
+sentence-transformers
