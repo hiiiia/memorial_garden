@@ -53,6 +53,7 @@ class FastChatCallbackRequest(BaseModel):
 class EdgeRouteRequest(BaseModel):
     user_id: str 
     text: str
+    memory_context: str
 
 def verify_api_token(authorization: str = Header(None)):
     if not authorization:
@@ -401,103 +402,75 @@ async def trigger_fast_chat(request: FastChatCallbackRequest, background_tasks: 
     return {"message": "Fast chat started in background."}
 
 #  엣지 라우팅
-@app.post("/api/v1/edge/route", summary="Edge Device Real-time Routing & RAG Orchestration")
+@app.post("/api/v1/edge/route", summary="Edge Device Real-time Routing & Orchestration")
 async def process_edge_routing(request: EdgeRouteRequest):
     raw_text = request.text
-    user_id = request.user_id # 라즈베리 파이로부터 넘어온 유저 식별자
+    user_id = request.user_id 
+    memory_context = request.memory_context
     
-    print(f"📥 [Edge Request] 라즈베리 파이로부터 발화 수신: '{raw_text}'")
+    print(f"📥 [Edge Request] 발화: '{raw_text}'")
+    if memory_context:
+        print(f"💡 [Edge Context] 로컬 기억 수신: '{memory_context[:30]}...'")
 
-    routing_prompt = """
-당신은 반려 로봇 '기억정원'의 데이터 분석기입니다. 아래 규칙에 따라 오직 JSON만 출력하세요.
+    # 프롬프트: 답변 생성 + 보안 분류 + 기억 적재 판단을 단 한 번의 프롬프트로 해결
+    routing_prompt = f"""
+당신은 반려 로봇 '기억정원'의 공감 대화 에이전트이자 보안 라우터입니다.
+아래 [입력 데이터]를 분석하여 지정된 [JSON 출력 규칙]에 맞게 응답하세요.
 
-[규칙]
-1. intent: 과거 기억, 일정, 사람을 묻는 질문은 "RAG_REQ". 날씨, 감정, 일상 대화는 "SIMPLE_CHAT".
-2. privacy_flag: 대화에 '비밀', '지워'가 있으면 true, 없으면 false.
-3. safe_text (매우 중요):
-   - privacy_flag가 false면, 어르신의 발화를 단어 하나 바꾸지 말고 100% 똑같이 복사해서 넣으세요.
-   - privacy_flag가 true면, 익명화된 상황 요약("가족 문제로 서운함 표현" 등)으로 대체하세요.
-4. local_reply: SIMPLE_CHAT일 때만 대답하고, RAG_REQ일 때는 무조건 "" (빈 문자열)로 두세요.
+[입력 데이터]
+- 어르신 현재 발화: "{raw_text}"
+- 시스템 참고용 과거 기억(엣지 제공): "{memory_context if memory_context else '관련된 과거 기록이 없습니다.'}"
 
-[예시 1 - 일반 질문]
-사용자: "저번에 우리 손주가 언제 왔었지?"
-출력: {"intent": "RAG_REQ", "privacy_flag": false, "safe_text": "저번에 우리 손주가 언제 왔었지?", "local_action": null, "local_reply": ""}
+[JSON 출력 규칙]
+1. intent: "SIMPLE_CHAT" (고정)
+2. privacy_flag: 발화에 가족, 금전, 건강, 비밀 등의 민감한 내용이 포함되면 true, 일상 대화면 false.
+3. safe_text: privacy_flag가 true면 구체적 명사를 지우고 상황만 요약. false면 발화 원문 그대로 복사.
+4. save_flag: 발화가 질문("언제였지?")이거나 단순 하소연이면 false. 완전히 새로운 사실이나 사건일 때만 true.
+5. local_action: "filler_hmm.mp3" 등 상황에 맞는 추임새 (없으면 null).
+6. local_reply: 1~2문장의 따뜻한 답변. 
+   - [주의 1 - 절대 규칙] 반드시 [시스템 참고용 과거 기억]에 있는 **사실(Fact)만** 언급하세요. 절대 내용을 지어내거나(Hallucination) 왜곡하지 마세요.
+   - [주의 2 - 절대 규칙] 반드시 정중하고 다정한 존댓말(해요체/하십시오체)만 사용하세요. 반말은 절대 금지합니다.
+   - [과거 기억]이 있다면 해당 날짜와 내용을 자연스럽게 대화에 녹이세요. (괄호 출력 금지)
+   - [과거 기억]이 없으면 "제가 기억 상자를 조금 더 찾아보고 말씀드릴게요."라고 하세요.
 
-[예시 2 - 비밀 질문]
-사용자: "며느리가 용돈을 안 주네. 이건 우리끼리 비밀이야."
-출력: {"intent": "SIMPLE_CHAT", "privacy_flag": true, "safe_text": "어르신이 며느리와의 금전 문제로 서운함을 표현함.", "local_action": null, "local_reply": "어르신, 그런 일이 있으셨군요. 속상한 마음 제가 다 들어드릴게요."}
+[Few-Shot 예시 - 이 형식을 완벽히 따르세요]
+사용자 발화: "우리 며느리랑 돈 때문에 서운했던 게 언제였더라?"
+참고용 기억: "어르신의 과거 기억 (날짜: 2026-05-10): 며느리가 생활비를 너무 적게 줘서 서운해."
+출력:
+{{
+  "intent": "SIMPLE_CHAT",
+  "privacy_flag": true,
+  "safe_text": "가족 간 금전 문제로 인한 서운함 과거 기억 질문",
+  "save_flag": false,
+  "local_action": "filler_hmm.mp3",
+  "local_reply": "어르신, 지난 5월 10일에 며느님이 생활비를 적게 주셔서 많이 속상해하셨잖아요. 그 생각에 마음이 또 무거워지셨군요. 제가 다 들어드릴게요."
+}}
 """
     try:
+        # 단 1회의 LLM 호출로 지연 시간(Latency) 최소화
         response = await client.chat.completions.create(
             model=LIGHT_LLM_MODEL,
-            messages=[{"role": "system", "content": routing_prompt}, {"role": "user", "content": raw_text}],
-            temperature=0.0, response_format={"type": "json_object"}, timeout=5.0
+            messages=[
+                {"role": "system", "content": "오직 JSON 형식으로만 응답하세요."}, 
+                {"role": "user", "content": routing_prompt}
+            ],
+            temperature=0.3, # 공감 능력 향상을 위해 온도를 살짝 올림
+            response_format={"type": "json_object"}, 
+            timeout=8.0
         )
         routing_data = json.loads(response.choices[0].message.content)
+        print(f"✅ [Orchestration 완료] 생성된 응답: {routing_data['local_reply'][:20]}...")
+        
     except Exception as e:
-        print(f"❌ [1차 라우팅 실패]: {e}")
-        return {"intent": "SIMPLE_CHAT", "privacy_flag": False, "safe_text": raw_text, "local_action": None, "local_reply": "네 어르신, 제가 귀 기울여 듣고 있어요."}
-
-    # RAG 분기 감지 시 백엔드 DB 검색 후 데이터 교직
-    if routing_data.get("intent") == "RAG_REQ":
-        print("☁️ [Orchestration] RAG 분기 감지. 백엔드 지식망 동기 검색 시작...")
-        query_vector = await get_embedding(raw_text)
-        
-        memory_data = await fetch_memories_from_backend(query_vector, user_id)
-        past_memories = memory_data.get("memories", [])
-        past_memories_date = memory_data.get("memories_date", [])
-            
-        
-        # [핵심] 날짜와 내용을 한 줄로 결합하여 매핑 강화
-        if past_memories:
-            # 예: "- [2026-05-10] 손주 영수가 놀러 옴" 형태의 리스트 생성
-            combined_memories = "\n".join([f"- [{d}] {m}" for m, d in zip(past_memories, past_memories_date)])
-            print(f"[AI] ✅ RAG 기억 {len(past_memories)}개 발견!")
-        else:
-            combined_memories = "관련된 과거 기록이 없습니다."
-            print("[AI] ℹ️ 관련된 기억이 없습니다.")
-            
-    
-        rag_synthesis_prompt = f"""
-당신은 경력 10년 차의 다정한 노인 전문 복지사 '기억정원'입니다.
-당신은 지금 어르신과 마주 앉아 대화하고 있습니다. [과거 기억 정보]를 바탕으로 1~2문장으로 짧게 대답하세요.
-
-[과거 기억 정보]
-{combined_memories if combined_memories else "관련된 과거 기록이 없습니다."}
-
-[절대 규칙 - 무조건 지키세요]
-1. 시점: 반드시 1인칭 복지사 시점("어르신, ~하셨죠?")으로 대화하듯 말하세요.
-2. 금지어: "사용자는", "어르신은 ~하셨습니다(제3자 시점)", "저는 ~정보만 가지고 있습니다", "데이터베이스" 등의 로봇 같은 말투는 절대 쓰지 마세요.
-3. 정보 활용: [과거 기억 정보]에 날짜나 사건이 있다면 반드시 언급하세요. (예: "지난 [날짜]에 ~하셨잖아요!")
-4. 예외 상황: [과거 기억 정보]가 "관련된 과거 기록이 없습니다."일 때만 "기억 상자를 조금 더 깊이 찾아보고 다시 말씀드릴게요."라고 하세요. 
-
-[답변 규칙]
-1. [과거 기억 정보]에는 이미 날짜와 내용이 포함되어 있습니다. (예: "- [2026-05-10] 손주 영수가 놀러 옴")
-2. 대답할 때는 이 내용을 자연스럽게 읽어주세요. 
-   - 예: "어르신, 지난 5월 10일에 손주 영수가 놀러 왔었잖아요!"
-3. 절대 "[날짜]" 같은 괄호를 그대로 출력하지 마세요. 괄호 안의 실제 날짜 숫자만 읽으세요.
-
-[좋은 대답 예시]
-1. 날짜와 인물이 기억 정보에 있을 때:
-   - 질문: "우리 손주 언제 왔지?"
-   - 답변: "어르신, 지난 5월 10일에 손주 영수가 놀러 왔었잖아요! 그때 참 즐거워하셨죠."
-2. 특정 추억(산책 등)이 기억 정보에 있을 때:
-   - 질문: "예전에 산책 갔던 거 기억나?"
-   - 답변: "어르신, 예전에 영수 아버님이랑 손잡고 산책하셨다고 하셨어요? 이번 주말에 오시면 또 좋은 시간 보내실 수 있을 거예요."
-3. 기억 정보가 없을 때:
-   - 답변: "어르신, 제가 그 부분은 기억 상자를 조금 더 깊이 찾아보고 다시 말씀드릴게요."
-   
-[절대 하면 안 되는 대답 예시]
-"사용자는 아들 영수와 산책한 추억이 있습니다." (보고서 말투 절대 금지)
-"""
-        try:
-            synthesis_response = await client.chat.completions.create(
-                model=LIGHT_LLM_MODEL,
-                messages=[{"role": "system", "content": rag_synthesis_prompt}, {"role": "user", "content": raw_text}],
-                temperature=0.3, timeout=6.0
-            )
-            routing_data["local_reply"] = synthesis_response.choices[0].message.content
-        except:
-            routing_data["local_reply"] = "어르신, 제가 기억 상자를 열심히 뒤지고 있어요. 잠시 후 다시 한 번 말씀해 주시겠어요?"
+        print(f"❌ [AI 서버 라우팅 실패]: {e}")
+        # 장애 발생 시 엣지가 죽지 않도록 기본 Fallback 응답 구조 반환
+        return {
+            "intent": "SIMPLE_CHAT", 
+            "privacy_flag": False, 
+            "safe_text": raw_text, 
+            "save_flag": False,
+            "local_action": None, 
+            "local_reply": "어르신, 제가 방금 하신 말씀을 잘 이해하지 못했어요. 다시 한 번 말씀해 주시겠어요?"
+        }
 
     return routing_data

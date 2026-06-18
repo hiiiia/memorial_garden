@@ -87,33 +87,33 @@ class Log(Base):
 
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
     dependent_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False)
-    file_url = Column(String(255), nullable=False)
     
-    # 생성된 AI 그림일기 이미지 URL 저장용
+    # 오디오 파일은 엣지에서 즉시 파기하거나 상황에 따라 안 올라올 수 있으므로 nullable=True
+    file_url = Column(String(255), nullable=True)
+    
+    # ==========================================
+    # 프라이버시 및 Z-Score 스코어링 핵심 컬럼
+    # ==========================================
+    # 원본 stt_text 대신 엣지에서 필터링된 익명화 텍스트 저장 (예: "가족 간 금전 문제 언급")
+    safe_text = Column(Text, nullable=False) 
+    
+    # Z-Score 우울증 통계 산출을 위한 핵심 플래그 (엣지 라우터의 privacy_flag 값)
+    is_sensitive = Column(Boolean, default=False, nullable=False, index=True)
+    
+    # 생성된 AI 그림일기 이미지 URL 및 텍스트 유지
     image_url = Column(String(500), nullable=True)
-    status = Column(String(20), default="PROCESSING", nullable=False)
+    diary_text = Column(Text, nullable=True) 
+    keywords = Column(Text, nullable=True)   
     
-    # text 타입 적용 완료
-    stt_text = Column(Text, nullable=True)      
-    reply_text = Column(Text, nullable=True)   
-    reply_audio_url = Column(String(500), nullable=True) 
-    
-    # 건강 지표 세분화 점수
+    # 건강 지표 세분화 점수 유지
     risk_score = Column(Float, default=0.0, nullable=False)
-    depression_score = Column(Float, default=0.0, nullable=False)        # 추가!
-    cognitive_decline_score = Column(Float, default=0.0, nullable=False) # 추가!
+    depression_score = Column(Float, default=0.0, nullable=False)        
+    cognitive_decline_score = Column(Float, default=0.0, nullable=False) 
     
     primary_emotion = Column(String(20), nullable=True)    
     llm_summary = Column(Text, nullable=True)       
     
-    # 프론트엔드 달력 UI용 텍스트 및 해시태그
-    diary_text = Column(Text, nullable=True) # 추가! (동화풍 그림일기 본문)
-    keywords = Column(Text, nullable=True)   # 추가! (해시태그 - 콤마로 구분하여 저장)
-    
-    # 어르신 장기 기억(RAG)용 벡터 컬럼
-    # 구글 gemini-embedding-2 모델의 출력 차원인 3072에 맞춤
-    vector_embedding = Column(Vector(3072), nullable=True)
-    
+    status = Column(String(20), default="COMPLETED", nullable=False)
     created_at = Column(DateTime, server_default=func.now(), index=True)
 
     dependent = relationship("Dependent", back_populates="logs")
