@@ -9,7 +9,7 @@ import time
 # 🔗 환경 설정 (라즈베리 파이 Docker 환경)
 # ==========================================
 # AI 서버이자 백엔드인 PC의 IP 및 포트
-AI_SERVER_URL = os.getenv("AI_SERVER_URL", "http://192.168.1.82:8000") 
+AI_SERVER_URL = os.getenv("AI_SERVER_URL", "http://192.168.1.82:8001") 
 DEPENDENT_ID = "dep_003" 
 
 # ==========================================
