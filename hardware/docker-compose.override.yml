@@ -18,6 +18,10 @@ services:
     # [중요] GPIO 제어(rpi-lgpio 등)를 위해 하드웨어 핀에 접근할 수 있는 최고 권한 부여
     privileged: true 
     
+    # .env 파일의 환경 변수를 컨테이너로 주입
+    env_file:
+      - .env
+
     # 윈도우 개발용
     ports:
       - "8765:8765"
