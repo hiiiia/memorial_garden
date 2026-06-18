@@ -1,7 +1,7 @@
-version: '3.2'
+version: '3.8'
 
 services:
-  # 1. 파이썬 하드웨어 제어 에이전트 (오디오, GPIO, 로컬 웹소켓)
+  # 1. 파이썬 하드웨어 제어 에이전트 (오디오, GPIO, 로컬 웹소켓 + 로컬 DB 포함)
   agent:
     build:
       context: ./agent
@@ -10,6 +10,7 @@ services:
 
     volumes:
       - ./agent:/app
+      - ./data/local_db:/app/local_memory_db # 컨테이너가 재시작되어도 기억 데이터가 날아가지 않도록 호스트와 연결
 
     # [중요] 라즈베리 파이의 오디오(마이크) 장치 권한을 도커 내부로 연결
     devices:
@@ -18,16 +19,20 @@ services:
     # [중요] GPIO 제어(rpi-lgpio 등)를 위해 하드웨어 핀에 접근할 수 있는 최고 권한 부여
     privileged: true 
     
-    # 🌟 추가됨: 같은 폴더에 있는 .env 파일의 모든 변수를 컨테이너 안으로 주입합니다.
     env_file:
       - .env
 
-    # ports:
-    #   - "8765:8765"
-    # [중요] 라즈베리 파이 본체와 네트워크를 완전히 공유
-    # 네이티브 OS에 띄운 크로미움 브라우저가 localhost:8765로 즉시 접근할 수 있게 됨
-    # network_mode: "host"
-    
+    environment:
+      - CHROMA_DB_PATH=/app/local_memory_db #  database.py에서 참조할 로컬 DB 저장 경로 강제 지정
+
+    # (라즈베리 파이 5 리소스 격리 및 최적화)
+    # 에이전트와 로컬 DB가 파이의 전체 자원을 과점하여 지연(Latency)이 발생하는 것을 원천 차단합니다.
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'       # 4개 코어 중 최대 2개까지만 사용하도록 제한
+          memory: 2048M     # 최대 메모리 사용량을 2GB로 캡핑하여 OS 및 프론트엔드 자원 보장
+
     restart: unless-stopped
 
   # 2. 어르신용 React UI 웹 서버 (Nginx)
@@ -41,7 +46,7 @@ services:
       - ./frontend:/app          # 내 PC의 코드를 도커 안으로 실시간 동기화
       - /app/node_modules        # 도커 내부에서 설치된 패키지 폴더는 덮어쓰지 않고 보호
     environment:
-      # 윈도우(WSL2) 환경에서 파일 수정이 즉각 감지되도록 강제하는 필수 옵션
+      # 윈도우(WSL2) 또는 엣지 환경에서 파일 수정이 즉각 감지되도록 강제하는 필수 옵션
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
       - WDS_SOCKET_PORT=0
