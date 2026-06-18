@@ -40,7 +40,10 @@ async def search_senior_memory(
         # 검색된 과거의 요약본들을 리스트로 추출
         memories = [log.llm_summary for log in similar_logs if log.llm_summary]
         
-        return {"status": "success", "memories": memories}
+        memories_date = [log.created_at for log in similar_logs]
+        
+        
+        return {"status": "success", "memories": memories, "memories_date" : memories_date}
 
     except Exception as e:
         print(f"[RAG Retrieval Error] DB 검색 실패: {e}")

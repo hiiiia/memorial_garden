@@ -115,20 +115,24 @@ async def get_embedding(text: str) -> list[float]:
         print(f"❌ [Embedding Error] 임베딩 생성 실패: {e}")
         raise HTTPException(status_code=500, detail="임베딩 생성 실패")
     
-async def fetch_memories_from_backend(query_vector: list[float], user_id: str) -> list[str]:
-    """백엔드 서버의 벡터 검색 API를 호출하여 과거 기억 리스트를 받아옵니다."""
+async def fetch_memories_from_backend(query_vector: list[float], user_id: str) -> dict:
+    """백엔드 서버의 벡터 검색 API를 호출하여 과거 기억(내용 + 날짜)을 받아옵니다."""
     search_url = f"{BACKEND_URL}api/v1/memory/search/{user_id}"
     print(search_url)
     payload = {"query_vector": query_vector, "limit": 3}
     try:
         async with httpx.AsyncClient() as http_client:
             resp = await http_client.post(search_url, json=payload, timeout=5.0)
+            data = resp.json()
             if resp.status_code == 200:
-                return resp.json().get("memories", [])
+                return {
+                    "memories": data.get("memories", []),
+                    "memories_date": data.get("memories_date", [])
+                }
             return []
     except Exception as e:
         print(f"❌ [Backend Connection Failed] 백엔드 통신 실패: {e}")
-        return []
+        return {"memories": [], "memories_date": []}
 
 async def generate_diary_image(image_prompt: str, job_id: str, max_retries: int = 3, base_delay: int = 5) -> str:
     """더미 이미지 다운로드 (테스트용)"""
@@ -171,7 +175,11 @@ async def process_audio_and_callback(job_id: str, user_id: str, file_path: str, 
         past_memories = []
         if quick_stt_text:
             query_vector = await get_embedding(quick_stt_text)
-            past_memories = await fetch_memories_from_backend(query_vector, user_id)
+            
+            memory_data = await fetch_memories_from_backend(query_vector, user_id)
+            past_memories = memory_data.get("memories", [])
+            past_memories_date = memory_data.get("memories_date", [])
+            
             print(f"[AI] ✅ 관련된 과거 기억 {len(past_memories)}개 발견!")
     except Exception as e:
         print(f"[AI Warning] STT/RAG 에러 (기억 없이 진행): {e}")
@@ -401,18 +409,23 @@ async def process_edge_routing(request: EdgeRouteRequest):
     print(f"📥 [Edge Request] 라즈베리 파이로부터 발화 수신: '{raw_text}'")
 
     routing_prompt = """
-당신은 반려 로봇 '기억정원'의 핵심 데이터 라우터입니다. 주어진 대화를 분석하여 반드시 JSON으로만 응답하세요.
+당신은 반려 로봇 '기억정원'의 데이터 분석기입니다. 아래 규칙에 따라 오직 JSON만 출력하세요.
 
-[판단 기준 및 행동 지침]
-1. intent: 어르신이 과거의 기억, 일정, 사람 이름 등 정보를 물어보거나 찾아야 하면 "RAG_REQ", 단순한 감정 표현이나 날씨 등 일상 대화면 "SIMPLE_CHAT".
-2. privacy_flag: 대화에 '비밀', '지워', '말하지 마' 같은 보안 지시가 있으면 true, 없으면 false.
+[규칙]
+1. intent: 과거 기억, 일정, 사람을 묻는 질문은 "RAG_REQ". 날씨, 감정, 일상 대화는 "SIMPLE_CHAT".
+2. privacy_flag: 대화에 '비밀', '지워'가 있으면 true, 없으면 false.
 3. safe_text (매우 중요):
-   - privacy_flag가 true일 경우: 원문을 절대 적지 말고, "어르신이 가족 관련 서운함을 표현함"과 같이 익명화된 감정/상황 요약문만 작성.
-   - privacy_flag가 false일 경우: 어르신이 말한 원문을 단 한 글자도 바꾸지 말고 100% 똑같이 작성.
-4. local_reply: SIMPLE_CHAT일 때만 다정한 복지사 말투로 작성. RAG_REQ일 때는 반드시 빈 문자열("")로 비워둘 것.
+   - privacy_flag가 false면, 어르신의 발화를 단어 하나 바꾸지 말고 100% 똑같이 복사해서 넣으세요.
+   - privacy_flag가 true면, 익명화된 상황 요약("가족 문제로 서운함 표현" 등)으로 대체하세요.
+4. local_reply: SIMPLE_CHAT일 때만 대답하고, RAG_REQ일 때는 무조건 "" (빈 문자열)로 두세요.
 
-[JSON 형식]
-{"intent": "RAG_REQ" | "SIMPLE_CHAT", "privacy_flag": true/false, "safe_text": "원문 또는 요약문", "local_action": null, "local_reply": "스몰톡 답변"}
+[예시 1 - 일반 질문]
+사용자: "저번에 우리 손주가 언제 왔었지?"
+출력: {"intent": "RAG_REQ", "privacy_flag": false, "safe_text": "저번에 우리 손주가 언제 왔었지?", "local_action": null, "local_reply": ""}
+
+[예시 2 - 비밀 질문]
+사용자: "며느리가 용돈을 안 주네. 이건 우리끼리 비밀이야."
+출력: {"intent": "SIMPLE_CHAT", "privacy_flag": true, "safe_text": "어르신이 며느리와의 금전 문제로 서운함을 표현함.", "local_action": null, "local_reply": "어르신, 그런 일이 있으셨군요. 속상한 마음 제가 다 들어드릴게요."}
 """
     try:
         response = await client.chat.completions.create(
@@ -430,21 +443,52 @@ async def process_edge_routing(request: EdgeRouteRequest):
         print("☁️ [Orchestration] RAG 분기 감지. 백엔드 지식망 동기 검색 시작...")
         query_vector = await get_embedding(raw_text)
         
-        past_memories = await fetch_memories_from_backend(query_vector, user_id)
+        memory_data = await fetch_memories_from_backend(query_vector, user_id)
+        past_memories = memory_data.get("memories", [])
+        past_memories_date = memory_data.get("memories_date", [])
+            
         
+        # [핵심] 날짜와 내용을 한 줄로 결합하여 매핑 강화
+        if past_memories:
+            # 예: "- [2026-05-10] 손주 영수가 놀러 옴" 형태의 리스트 생성
+            combined_memories = "\n".join([f"- [{d}] {m}" for m, d in zip(past_memories, past_memories_date)])
+            print(f"[AI] ✅ RAG 기억 {len(past_memories)}개 발견!")
+        else:
+            combined_memories = "관련된 과거 기록이 없습니다."
+            print("[AI] ℹ️ 관련된 기억이 없습니다.")
+            
+    
         rag_synthesis_prompt = f"""
-당신은 경력 10년 차의 따뜻하고 예의 바른 노인 전문 복지사 '기억정원'입니다.
-아래 [과거 기억 정보]를 바탕으로 어르신의 질문에 대답해야 합니다.
+당신은 경력 10년 차의 다정한 노인 전문 복지사 '기억정원'입니다.
+당신은 지금 어르신과 마주 앉아 대화하고 있습니다. [과거 기억 정보]를 바탕으로 1~2문장으로 짧게 대답하세요.
 
 [과거 기억 정보]
-{past_memories if past_memories else "관련된 과거 기록이 데이터베이스에 존재하지 않습니다."}
+{combined_memories if combined_memories else "관련된 과거 기록이 없습니다."}
 
-[절대 준수 규칙 - 환각 금지]
-1. 만약 위 [과거 기억 정보]가 "존재하지 않습니다"이거나 비어있다면, 절대로 사실을 지어내거나 추측하지 마세요. 이 경우에는 반드시 아래 문장 중 하나를 선택해서 그대로 대답하세요.
-   - "어르신, 제가 그 부분은 기억 상자를 조금 더 깊이 찾아보고 다시 말씀드릴게요."
-   - "제가 지금 당장 기억이 가물가물하네요. 조금만 더 찾아보고 확실히 알려드릴게요."
-2. 말투: 항상 다정하고 예의 바른 존댓말(해요체)을 사용하세요. 반말이나 혼잣말("사실이야", "같아")은 절대 금지합니다.
-3. 기억 정보가 존재할 경우: 해당 정보를 바탕으로 1~2문장으로 짧고 친절하게 대답하세요.
+[절대 규칙 - 무조건 지키세요]
+1. 시점: 반드시 1인칭 복지사 시점("어르신, ~하셨죠?")으로 대화하듯 말하세요.
+2. 금지어: "사용자는", "어르신은 ~하셨습니다(제3자 시점)", "저는 ~정보만 가지고 있습니다", "데이터베이스" 등의 로봇 같은 말투는 절대 쓰지 마세요.
+3. 정보 활용: [과거 기억 정보]에 날짜나 사건이 있다면 반드시 언급하세요. (예: "지난 [날짜]에 ~하셨잖아요!")
+4. 예외 상황: [과거 기억 정보]가 "관련된 과거 기록이 없습니다."일 때만 "기억 상자를 조금 더 깊이 찾아보고 다시 말씀드릴게요."라고 하세요. 
+
+[답변 규칙]
+1. [과거 기억 정보]에는 이미 날짜와 내용이 포함되어 있습니다. (예: "- [2026-05-10] 손주 영수가 놀러 옴")
+2. 대답할 때는 이 내용을 자연스럽게 읽어주세요. 
+   - 예: "어르신, 지난 5월 10일에 손주 영수가 놀러 왔었잖아요!"
+3. 절대 "[날짜]" 같은 괄호를 그대로 출력하지 마세요. 괄호 안의 실제 날짜 숫자만 읽으세요.
+
+[좋은 대답 예시]
+1. 날짜와 인물이 기억 정보에 있을 때:
+   - 질문: "우리 손주 언제 왔지?"
+   - 답변: "어르신, 지난 5월 10일에 손주 영수가 놀러 왔었잖아요! 그때 참 즐거워하셨죠."
+2. 특정 추억(산책 등)이 기억 정보에 있을 때:
+   - 질문: "예전에 산책 갔던 거 기억나?"
+   - 답변: "어르신, 예전에 영수 아버님이랑 손잡고 산책하셨다고 하셨어요? 이번 주말에 오시면 또 좋은 시간 보내실 수 있을 거예요."
+3. 기억 정보가 없을 때:
+   - 답변: "어르신, 제가 그 부분은 기억 상자를 조금 더 깊이 찾아보고 다시 말씀드릴게요."
+   
+[절대 하면 안 되는 대답 예시]
+"사용자는 아들 영수와 산책한 추억이 있습니다." (보고서 말투 절대 금지)
 """
         try:
             synthesis_response = await client.chat.completions.create(
