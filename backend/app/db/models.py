@@ -88,37 +88,43 @@ class Log(Base):
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
     dependent_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False)
     
-    # 오디오 파일은 엣지에서 즉시 파기하거나 상황에 따라 안 올라올 수 있으므로 nullable=True
-    file_url = Column(String(255), nullable=True)
+    # ==========================================
+    # 1. 헬스케어 메타 데이터
+    # ==========================================
+    status = Column(String(20), default="COMPLETED", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+    # ==========================================
+    # 2. AI 심층 분석 결과 (의료/정서 지표)
+    # ==========================================
+    risk_score = Column(Float, default=0.0, nullable=False)
+    depression_score = Column(Float, default=0.0, nullable=False)        
+    cognitive_decline_score = Column(Float, default=0.0, nullable=False) 
+    primary_emotion = Column(String(20), nullable=True)    
+    
+    # 원문 텍스트를 대체하는 유일한 '임상 소견 요약본'
+    llm_summary = Column(Text, nullable=True)       
     
     # ==========================================
-    # 프라이버시 및 Z-Score 스코어링 핵심 컬럼
+    # 3. 그림일기 데이터 (시각적 테라피)
     # ==========================================
-    # 원본 stt_text 대신 엣지에서 필터링된 익명화 텍스트 저장 (예: "가족 간 금전 문제 언급")
-    safe_text = Column(Text, nullable=False) 
-    
-    # Z-Score 우울증 통계 산출을 위한 핵심 플래그 (엣지 라우터의 privacy_flag 값)
-    is_sensitive = Column(Boolean, default=False, nullable=False, index=True)
-    
-    # 생성된 AI 그림일기 이미지 URL 및 텍스트 유지
     image_url = Column(String(500), nullable=True)
     diary_text = Column(Text, nullable=True) 
     keywords = Column(Text, nullable=True)   
     
-    # 건강 지표 세분화 점수 유지
-    risk_score = Column(Float, default=0.0, nullable=False)
-    depression_score = Column(Float, default=0.0, nullable=False)        
-    cognitive_decline_score = Column(Float, default=0.0, nullable=False) 
-    
-    primary_emotion = Column(String(20), nullable=True)    
-    llm_summary = Column(Text, nullable=True)       
-    
-    status = Column(String(20), default="COMPLETED", nullable=False)
-    created_at = Column(DateTime, server_default=func.now(), index=True)
+    # ==========================================
+    # 4. 음향 바이오마커 (Z-Score 정밀 통계용)
+    # ==========================================
+    speech_rate = Column(Float, nullable=True)    # 말하기 속도
+    pause_ratio = Column(Float, nullable=True)    # 침묵 비율
+    pitch_variance = Column(Float, nullable=True) # 목소리 단조로움 지표
 
+    # ==========================================
+    # Relationships
+    # ==========================================
     dependent = relationship("Dependent", back_populates="logs")
     alerts = relationship("Alert", back_populates="log")
-    
+
 class Alert(Base):
     __tablename__ = "alerts"
 

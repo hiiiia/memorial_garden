@@ -8,3 +8,5 @@ faster-whisper
 openai
 httpx
 pydantic-settings
+librosa
+python-multipart
