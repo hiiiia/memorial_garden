@@ -76,10 +76,10 @@ class AudioRecorder:
             if os.path.exists(test_source):
                 print(f"[TEST] 녹음 정지. {TEST_INPUT_FILE} 복사 시작 -> {full_path}")
                 shutil.copy(test_source, full_path) # mp3를 지정된 wav_path로 복사
-                return True
+                return True, full_path
             else:
                 print(f"[TEST ERROR] 테스트 파일 없음: {TEST_INPUT_FILE}")
-                return True, full_path
+                return False, None
 
         # 실제 하드웨어 로직
         if self.stream:
