@@ -2,9 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 // 팀원이 작성한 CSS 파일 경로에 맞게 수정해주세요. (예: import '../css/ElderPage.css';)
 import '../css/Kiosk.css'; 
 
-type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'send' | 'finish';
+type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'memory' | 'send' | 'finish' | 'detail' | 'help';
 type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
 
+interface MemoryData {
+  image: React.ReactNode | string;
+  title: string;
+  date: string;
+  desc: string[];
+}
 const KioskPage: React.FC = () => {
   // 1. 화면 전환 상태 (팀원 코드)
   const [screen, setScreen] = useState<Screen>('home');
@@ -13,6 +19,33 @@ const KioskPage: React.FC = () => {
   const [agentState, setAgentState] = useState<AgentState>('idle');
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [aiText, setAiText] = useState<string>('안녕하세요 어르신\n오늘은 어떤 하루를\n보내셨나요?');
+
+  // 선택된 상세 추억 상태
+  const [selectedMemory, setSelectedMemory] = useState<MemoryData | null>(null);
+  
+  // 추억 보관함 페이징(슬라이드) 상태
+  const [memoryPage, setMemoryPage] = useState(0);
+
+  // 실제 데이터가 있다고 가정 (기존 데이터 배열로 교체하세요)
+  const allMemories: MemoryData[] = []; 
+  
+  // 화면에 보여줄 메모리 개수 계산 (예: 한 번에 3개씩 렌더링)
+  const itemsPerPage = 3;
+  const visibleMemories = allMemories.slice(
+    memoryPage * itemsPerPage, 
+    (memoryPage + 1) * itemsPerPage
+  );
+
+  // 좌우 화살표 클릭 핸들러
+  const handlePrevMemory = () => {
+    if (memoryPage > 0) setMemoryPage(prev => prev - 1);
+  };
+
+  const handleNextMemory = () => {
+    if ((memoryPage + 1) * itemsPerPage < allMemories.length) {
+      setMemoryPage(prev => prev + 1);
+    }
+  };
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -309,15 +342,15 @@ const KioskPage: React.FC = () => {
         <div className="home-card detail-card">
           <div className="detail-top">
             <div className="detail-image-box">
-              {selectedMemory.image}
+              {selectedMemory?.image}
             </div>
 
             <div className="detail-info">
-              <h1>{selectedMemory.title}</h1>
-              <p className="detail-date">{selectedMemory.date}</p>
+              <h1>{selectedMemory?.title}</h1>
+              <p className="detail-date">{selectedMemory?.date}</p>
 
               <p className="detail-desc">
-                {selectedMemory.desc.map((line, index) => (
+                {selectedMemory?.desc.map((line : string, index: number) => (
                   <React.Fragment key={index}>
                     {line}
                     <br />
