@@ -109,16 +109,12 @@ const KioskPage: React.FC = () => {
                 >
                   📖<span>오늘의<br />일기</span>
                 </button>
-<<<<<<< HEAD
-                <button className="menu-btn memory-btn">🖼<span>추억 보관함</span></button>
-=======
                 <button
                   className="menu-btn memory-btn"
                   onClick={() => setScreen('memory')}
                 >
                   🖼<span>추억<br />보관함</span>
                 </button>
->>>>>>> f88f4f9 (feat: 키오스크 UI 수정)
               </div>
             </div>
           </div>
@@ -255,8 +251,6 @@ const KioskPage: React.FC = () => {
           </div>
         </div>
       )}
-<<<<<<< HEAD
-=======
       {screen === 'memory' && (
         <div className="home-card memory-card">
           <h1 className="memory-title">나의 추억</h1>
@@ -383,7 +377,6 @@ const KioskPage: React.FC = () => {
           </div>
         </div>
       )}
->>>>>>> f88f4f9 (feat: 키오스크 UI 수정)
     </div>
   );
 };
