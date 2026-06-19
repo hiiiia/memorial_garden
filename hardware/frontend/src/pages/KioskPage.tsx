@@ -107,9 +107,18 @@ const KioskPage: React.FC = () => {
                   className="menu-btn diary-btn"
                   onClick={() => setScreen('diary')}
                 >
-                  📖<span>오늘의 일기</span>
+                  📖<span>오늘의<br />일기</span>
                 </button>
+<<<<<<< HEAD
                 <button className="menu-btn memory-btn">🖼<span>추억 보관함</span></button>
+=======
+                <button
+                  className="menu-btn memory-btn"
+                  onClick={() => setScreen('memory')}
+                >
+                  🖼<span>추억<br />보관함</span>
+                </button>
+>>>>>>> f88f4f9 (feat: 키오스크 UI 수정)
               </div>
             </div>
           </div>
@@ -246,6 +255,135 @@ const KioskPage: React.FC = () => {
           </div>
         </div>
       )}
+<<<<<<< HEAD
+=======
+      {screen === 'memory' && (
+        <div className="home-card memory-card">
+          <h1 className="memory-title">나의 추억</h1>
+
+          <div className="memory-content">
+            <button className="memory-arrow" onClick={handlePrevMemory}>
+              ‹
+            </button>
+
+            <div className="memory-list">
+              {visibleMemories.map((memory, index) => (
+                <div className="memory-item" key={index}>
+                  <div className="memory-image">{memory.image}</div>
+
+                  <div className="memory-info">
+                    <h2>{memory.title}</h2>
+                    <p>{memory.date}</p>
+                  </div>
+
+                  <div className="memory-action-buttons">
+                    <button
+                      className="memory-send-btn"
+                      onClick={() => {
+                        setSelectedMemory(memory);
+                        setScreen('finish');
+                      }}
+                    >
+                      ✉ 보내기
+                    </button>
+
+                    <button
+                      className="memory-view-btn"
+                      onClick={() => {
+                        setSelectedMemory(memory);
+                        setScreen('detail');
+                      }}
+                    >
+                      🔍 보기
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button className="memory-arrow" onClick={handleNextMemory}>
+              ›
+            </button>
+          </div>
+
+          <button className="memory-close-btn" onClick={() => setScreen('home')}>
+            ❌ 닫기
+          </button>
+        </div>
+      )}
+      {screen === 'detail' && (
+        <div className="home-card detail-card">
+          <div className="detail-top">
+            <div className="detail-image-box">
+              {selectedMemory.image}
+            </div>
+
+            <div className="detail-info">
+              <h1>{selectedMemory.title}</h1>
+              <p className="detail-date">{selectedMemory.date}</p>
+
+              <p className="detail-desc">
+                {selectedMemory.desc.map((line, index) => (
+                  <React.Fragment key={index}>
+                    {line}
+                    <br />
+                  </React.Fragment>
+                ))}
+              </p>
+            </div>
+          </div>
+
+          <div className="detail-buttons">
+            <button className="detail-listen-btn">
+              🔊 다시듣기
+            </button>
+
+            <button
+              className="detail-close-btn"
+              onClick={() => setScreen('memory')}
+            >
+              ❌ 닫기
+            </button>
+          </div>
+        </div>
+      )}
+      {screen === 'help' && (
+        <div className="home-card help-card">
+
+          <div className="help-image">
+            👵
+          </div>
+
+          <div className="help-content">
+
+            <h1 className="help-title">
+              도움이 필요하신가요?
+            </h1>
+
+            <p className="help-text">
+              가족에게 전화로 연결해 드릴게요
+            </p>
+
+            <button
+              className="help-call-btn"
+              onClick={() => {
+                alert('보호자 연결 기능');
+              }}
+            >
+              📞 가족에게 전화
+            </button>
+
+            <button
+              className="help-no-btn"
+              onClick={() => setScreen('home')}
+            >
+              ❌ 아니요
+            </button>
+
+          </div>
+        </div>
+      )}
+>>>>>>> f88f4f9 (feat: 키오스크 UI 수정)
     </div>
   );
 };
