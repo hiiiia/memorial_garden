@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.8' # 본 파일과 버전을 일치시킵니다.
 
 services:
   # 1. 파이썬 하드웨어 제어 에이전트 (오디오, GPIO, 로컬 웹소켓)
@@ -10,22 +10,26 @@ services:
 
     volumes:
       - ./agent:/app
+      # [추가] 개발 PC에서도 DB 데이터를 유지하기 위한 볼륨
+      - ./data/local_db:/app/local_memory_db 
 
-    # [중요] 라즈베리 파이의 오디오(마이크) 장치 권한을 도커 내부로 연결
+    environment:
+      # [추가] 개발 환경에서도 ChromaDB 경로 인식
+      - CHROMA_DB_PATH=/app/local_memory_db 
+
+    # [주의] 윈도우(WSL)에서 실행 시 에러가 나면 아래 두 줄을 임시로 주석 처리하세요.
     devices:
       - "/dev/snd:/dev/snd"
       
-    # [중요] GPIO 제어(rpi-lgpio 등)를 위해 하드웨어 핀에 접근할 수 있는 최고 권한 부여
     privileged: true 
     
+    # .env 파일의 환경 변수를 컨테이너로 주입
+    env_file:
+      - .env
+
     # 윈도우 개발용
     ports:
       - "8765:8765"
-    # [중요] 라즈베리 파이 본체와 네트워크를 완전히 공유
-    # 네이티브 OS에 띄운 크로미움 브라우저가 localhost:8765로 즉시 접근할 수 있게 됨
-    # network_mode: "host"
-    
-    #network_mode: "bridge"
     
     restart: unless-stopped
 

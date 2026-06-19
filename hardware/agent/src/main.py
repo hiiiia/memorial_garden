@@ -2,171 +2,261 @@ import asyncio
 import websockets
 import json
 import aiohttp
-import speech_recognition as sr
+import uuid
 import os
-import tempfile
 import time
+from config import settings
+from database import db_manager 
+import sounddevice as sd
+import soundfile as sf
+import numpy as np
+import shutil
 
-# 🔗 백엔드 서버 기본 주소 및 어르신 ID 세팅 (실제 환경에 맞게 변경)
-# 내 윈도우 PC(호스트)를 거쳐서 다른 도커 컨테이너의 8000번 포트로 들어가게 해주는 주소
-BACKEND_URL = "http://host.docker.internal:8000"
-DEPENDENT_ID = "dep_003" 
 
-# # --- 1. STT 함수 (기존 유지) ---
-# def recognize_speech_from_mic():
-#     recognizer = sr.Recognizer()
-#     with sr.Microphone() as source:
-#         print("🎙️ 주변 소음 적응 중 (1초)...")
-#         recognizer.adjust_for_ambient_noise(source, duration=1)
-#         print("🎙️ 어르신 말씀 듣는 중...")
-#         try:
-#             audio = recognizer.listen(source, timeout=10, phrase_time_limit=5)
-#             print("⏳ 구글 STT로 텍스트 변환 중...")
-#             return recognizer.recognize_google(audio, language="ko-KR")
-#         except sr.WaitTimeoutError:
-#             return "(말씀이 없으셨습니다)"
-#         except Exception as e:
-#             return f"(오류 발생: {e})"
-# --- STT 함수 (마이크 없는 PC 테스트용 가짜 마이크) ---
+TEST_MODE = True 
+TEST_INPUT_FILE = "test_1.mp3"  # 실제 테스트용 파일 경로 (미리 준비 필요)
+TEST_INPUT_TEXT = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. 옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구"
+
+# ==========================================
+# 환경 설정 (라즈베리 파이 Docker 환경)
+# ==========================================
+AI_SERVER_URL = settings.AI_SERVER_URL
+DEPENDENT_ID = settings.DEPENDENT_ID
+BASE_DIR = "/app/data"
+# ==========================================
+# [로컬] STT 및 오디오 분석 모듈
+# ==========================================
 def recognize_speech_from_mic():
-    print("🎙️ [테스트 모드] 마이크가 없으므로 가짜 음성을 생성합니다... (2초 대기)")
-    time.sleep(2) # 실제로 말하고 인식하는 것처럼 2초 대기
+    if TEST_MODE:
+        print(f"📝 [TEST] STT 모킹 작동. 고정 텍스트 반환...")
+        return TEST_INPUT_TEXT
     
-    dummy_text = "지난번 우리 손주 이름이 뭐였지?"
-    print(f"📝 [가상 인식 완료]: {dummy_text}")
-    return dummy_text
+    # 실제 하드웨어 로직 (기존 코드)
+    print("🎙️ [하드웨어] 마이크 활성화. 어르신 말씀 듣는 중...")
+    time.sleep(2) 
+    return "실제 음성 데이터 처리 로직"
 
+# ==========================================
+#  [로컬] 오디오 재생 제어
+# ==========================================
+async def play_local_action(action_file: str):
+    if not action_file: return
+    print(f"🔊 [Local Audio] 추임새/효과음 재생 (딜레이 0초): {action_file}")
+    await asyncio.sleep(0.1) 
 
-# --- 2. 🚀 [핵심] 백엔드 RAG 트리거 및 폴링 함수 ---
-async def query_backend_with_polling(session: aiohttp.ClientSession, user_text: str):
-    """백엔드에 처리를 맡기고 0.5초마다 완료 여부를 확인합니다."""
-    if user_text.startswith("("):
-        return "어르신, 다시 한 번 말씀해 주시겠어요?", None
+# ==========================================
+# [테스트 모드] 오디오 녹음 제어 (AudioRecorder)
+# ==========================================
+class AudioRecorder:
+    def __init__(self):
+        self.is_recording = False
+        self.frames = []
+        self.stream = None
+        self.fs = 16000
 
-    # 1단계: 백엔드에 텍스트 던지기 (Trigger)
-    trigger_url = f"{BACKEND_URL}/api/v1/memory/ask_text/{DEPENDENT_ID}"
-    print(f"🌐 [API] 백엔드로 텍스트 전송 중: {user_text}")
-    
-    try:
-        async with session.post(trigger_url, json={"text": user_text}) as resp:
-            if resp.status != 202:
-                print(f"❌ 백엔드 요청 거부 (Status: {resp.status})")
-                return "기억 창고와 연결이 끊어졌어요.", None
-            
-            result = await resp.json()
-            job_id = result.get("job_id")
-            print(f"✅ [Trigger] 접수 완료 (Job ID: {job_id}). 폴링 대기 시작...")
-    except Exception as e:
-        print(f"❌ 백엔드 연결 실패: {e}")
-        return "인터넷 연결이 불안정하네요.", None
+    def start_recording(self):
+        if TEST_MODE:
+            print(f"[TEST] 녹음 시작 (시뮬레이션)")
+            self.is_recording = True
+            return
 
-    # 2단계: 폴링 루프 (0.5초 간격, 최대 10초 대기)
-    status_url = f"{BACKEND_URL}/api/v1/memory/check_status/{job_id}"
-    max_retries = 200 
-    
-    for attempt in range(max_retries):
-        await asyncio.sleep(0.5) 
-        
-        try:
-            async with session.get(status_url) as status_resp:
-                if status_resp.status == 200:
-                    status_data = await status_resp.json()
-                    current_status = status_data.get("status")
-                    
-                    if current_status == "COMPLETED":
-                        print(f"✅ [Polling] 답변 생성 완료! (시도: {attempt+1}번)")
-                        reply_text = status_data.get("reply_text")
-                        audio_url = status_data.get("audio_url")
-                        return reply_text, audio_url
-                        
-                    elif current_status == "FAILED":
-                        print("❌ [Polling] 백엔드 처리 중 FAILED 발생")
-                        return "제가 잠시 딴생각을 하느라 놓쳤네요. 다시 말씀해 주시겠어요?", None
-                    
-                    print(f"⏳ [Polling] AI 서버가 대답을 생성 중입니다... ({attempt+1}/{max_retries})")
-        except Exception as e:
-            print(f"❌ 상태 확인(Polling) 중 에러: {e}")
-            
-    # 3단계: 타임아웃
-    print("❌ [Polling Timeout] 10초 초과. 대기 종료.")
-    return "기억을 떠올리는 데 시간이 조금 걸리네요. 조금 이따 다시 여쭤볼게요.", None
+        self.frames = []
+        self.is_recording = True
+        self.stream = sd.InputStream(samplerate=self.fs, channels=1, callback=self.callback)
+        self.stream.start()
+        print("[Edge] 녹음 시작됨...")
 
-# --- 3. 🎵 다운로드 및 오디오 재생 함수 ---
-async def play_audio_from_url(session: aiohttp.ClientSession, audio_url: str):
-    """백엔드가 알려준 URL에서 완성된 mp3를 받아 스피커로 재생합니다."""
-    if not audio_url:
-        return
-        
-    print(f"🔊 스피커 출력 준비 (오디오 다운로드): {audio_url}")
-    try:
-        async with session.get(audio_url) as resp:
-            if resp.status == 200:
-                audio_data = await resp.read()
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-                    temp_path = fp.name
-                    fp.write(audio_data)
-                
-                # 라즈베리 파이 스피커 재생 (-q 옵션으로 로그 숨김)
-                await asyncio.to_thread(os.system, f"mpg123 -q {temp_path}")
-                os.remove(temp_path)
-                print("✅ 스피커 재생 완료 및 임시 파일 삭제")
+    def stop_recording(self, wav_name):
+        self.is_recording = False
+        full_path = os.path.join(BASE_DIR, wav_name)
+        if TEST_MODE:
+            # 1. 파일 존재 여부 확인
+            test_source = os.path.join(BASE_DIR, TEST_INPUT_FILE)
+            if os.path.exists(test_source):
+                print(f"[TEST] 녹음 정지. {TEST_INPUT_FILE} 복사 시작 -> {full_path}")
+                shutil.copy(test_source, full_path) # mp3를 지정된 wav_path로 복사
+                return True, full_path
             else:
-                print(f"❌ 오디오 파일 다운로드 실패 (Status: {resp.status})")
-    except Exception as e:
-        print(f"❌ 오디오 재생 파이프라인 에러: {e}")
+                print(f"[TEST ERROR] 테스트 파일 없음: {TEST_INPUT_FILE}")
+                return False, None
 
-def should_query_backend(text: str) -> bool:
-    keywords = ["기억", "지난번", "언제", "했던", "그때", "이름", "가족", "어제", "저번", "일기", "추억"]
-    return any(keyword in text for keyword in keywords)
+        # 실제 하드웨어 로직
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+        
+        if self.frames:
+            recording = np.concatenate(self.frames, axis=0)
+            sf.write(full_path, recording, self.fs)
+            print(f"[Edge] 녹음 종료 및 저장 완료: {full_path}")
+            return True, full_path
+        return False, None
 
-# --- 4. 메인 웹소켓 핸들러 ---
-async def handle_client(websocket, path):
-    print("✅ 프론트엔드(React) 웹소켓 연결 성공!")
+    def callback(self, indata, frames, time, status):
+        if self.is_recording:
+            self.frames.append(indata.copy())
+
+# 전역 객체 생성
+recorder = AudioRecorder()
+
     
+# 전역 비동기 큐 생성
+audio_task_queue = asyncio.Queue()
+
+# ==========================================
+# [소비자] Track 2: 백그라운드 워커 (무한 루프)
+# ==========================================
+async def background_audio_worker():
+    """
+    큐에 들어온 오디오 파일들을 순차적으로 AI 서버에 업로드하고 파기합니다.
+    서버가 시작될 때 백그라운드에서 단 하나만 실행되어 대기합니다.
+    """
+    print("[Background Worker] 오디오 업로드 워커 대기 중...")
+    
+    while True:
+        # 1. 큐에 작업이 들어올 때까지 대기
+        task_data = await audio_task_queue.get()
+        
+        wav_path = task_data.get("wav_path")
+        user_id = task_data.get("user_id")
+        stt_text = task_data.get("stt_text")
+        
+        if not os.path.exists(wav_path):
+            print(f"[Edge Worker] 오디오 파일 누락: {wav_path}")
+            audio_task_queue.task_done()
+            continue
+
+        # 2. AI 서버로 업로드
+        try:
+            async with aiohttp.ClientSession() as session:
+                data = aiohttp.FormData()
+                data.add_field('user_id', user_id)
+                data.add_field('stt_text', stt_text)
+                data.add_field('file', open(wav_path, 'rb'), filename='input.wav', content_type='audio/wav')
+
+                url = f"{AI_SERVER_URL}/api/v1/analyze/audio"
+                
+                print(f"[Edge Worker] 업로드 시작: {wav_path}")
+                async with session.post(url, data=data) as resp:
+                    if resp.status in (200, 202):
+                        print(f"[Edge Worker] 업로드 성공: {wav_path}")
+                    else:
+                        print(f"[Edge Worker] 서버 업로드 실패: HTTP {resp.status}")
+
+        except Exception as e:
+            print(f"[Edge Worker] 통신 중 오류 발생: {e}")
+            
+        finally:
+            # 3. [보안 핵심] 처리 완료 후 로컬 오디오 파기
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
+                print(f"[Edge 보안] 파일 파기 완료: {wav_path}")
+            
+            # 4. 큐에 작업이 완료되었음을 알림
+            audio_task_queue.task_done()
+
+# ==========================================
+# [생산자] Track 1: 실시간 초저지연 라우팅 
+# ==========================================
+async def get_response_from_ai_server(session, raw_text: str, memory_context: str):
+    url = f"{AI_SERVER_URL}/api/v1/edge/route"
+    payload = {
+        "user_id": DEPENDENT_ID,
+        "text": raw_text,
+        "memory_context": memory_context
+    }
+    try:
+        async with session.post(url, json=payload, timeout=5.0) as resp:
+            if resp.status == 200:
+                return await resp.json()
+    except Exception as e:
+        print(f"[Edge Error] 라우팅 서버 호출 실패: {e}")
+        
+    return {
+        "local_reply": "어르신, 제가 방금 하신 말씀을 놓쳤어요. 다시 한 번 말씀해 주시겠어요?"
+    }
+
+
+# ==========================================
+# 5. 메인 웹소켓 컨트롤러 (강화 버전)
+# ==========================================
+async def handle_client(websocket, path="/"):
+    print("[웹소켓] React 프론트엔드 연결 성공!")
     async with aiohttp.ClientSession() as session:
         try:
+            async_tasks = set()
             async for message in websocket:
                 data = json.loads(message)
+                
                 if data.get("command") == "force_record":
-                    
-                    # 1단계: 듣는 중
-                    await websocket.send(json.dumps({"status": "listening"}))
-                    user_text = await asyncio.to_thread(recognize_speech_from_mic)
-                    print(f"📝 인식된 텍스트: {user_text}")
-                    
-                    # 2단계: 처리 중
-                    await websocket.send(json.dumps({"status": "processing"}))
-                    
-                    # 🚀 백엔드 폴링 로직 태우기
-                    if should_query_backend(user_text) and not user_text.startswith("("):
-                        ai_response_text, audio_url = await query_backend_with_polling(session, user_text)
+                    if not recorder.is_recording:
+                        recorder.start_recording()
+                        await websocket.send(json.dumps({"status": "listening"}))
                     else:
-                        print("⚡ [Router] 로컬 즉시 응답 (혹은 인식 실패)")
-                        ai_response_text = "네 어르신, 제가 잘 듣고 있습니다."
-                        audio_url = None
-
-                    # 3단계: 말하는 중 (UI 자막 송신)
-                    await websocket.send(json.dumps({
-                        "status": "speaking",
-                        "type": "AI_RESPONSE",
-                        "text": ai_response_text
-                    }))
+                        unique_id = uuid.uuid4().hex[:8]
+                        wav_file_path = f"audio_{unique_id}.wav"
+                        success, wav_file_path = recorder.stop_recording(wav_file_path)
                     
-                    # 4단계: 백엔드에서 받은 실제 음성 출력
-                    if audio_url:
-                        await play_audio_from_url(session, audio_url)
-                    
-                    # 5단계: 대기 복귀
-                    await websocket.send(json.dumps({"status": "idle"}))
-                    print("💤 대기 모드로 전환\n")
-
+                        if success:
+                            # [안전장치] 전체 프로세스를 try-except로 감싸서 UI가 멈추지 않게 함
+                            try:
+                                await websocket.send(json.dumps({"status": "processing"}))
+                                
+                                raw_text = await asyncio.to_thread(recognize_speech_from_mic)
+                                
+                                search_results = db_manager.search_memory(raw_text, limit=1)
+                                memory_context = ""
+                                if search_results:
+                                    found_memory = search_results[0]
+                                    memory_context = f"어르신의 과거 기억 (날짜: {found_memory['date']}): {found_memory['content']}"
+                                
+                                routing_data = await get_response_from_ai_server(session, raw_text, memory_context)
+                                
+                                if routing_data.get("save_flag", False):
+                                    db_manager.insert_memory(raw_text)
+                                
+                                if routing_data.get("local_action"):
+                                    task = asyncio.create_task(play_local_action(routing_data.get("local_action")))
+                                    async_tasks.add(task)
+                                    task.add_done_callback(async_tasks.discard)
+                                
+                                ai_response_text = routing_data.get("local_reply", "기억 상자를 조금 더 찾아볼게요.")
+                                await websocket.send(json.dumps({
+                                    "status": "speaking",
+                                    "type": "AI_RESPONSE",
+                                    "text": ai_response_text
+                                }))
+                                
+                                await audio_task_queue.put({
+                                    "wav_path": wav_file_path,
+                                    "user_id": DEPENDENT_ID,
+                                    "stt_text": raw_text
+                                })
+                                
+                            except Exception as e:
+                                print(f"[Edge 프로세스 에러]: {e}")
+                                await websocket.send(json.dumps({"status": "error", "message": "분석 중 오류 발생"}))
+                            finally:
+                                # 어떤 상황에서도 UI 상태는 idle로 복구
+                                await websocket.send(json.dumps({"status": "idle"}))
         except websockets.exceptions.ConnectionClosed:
-            print("❌ 프론트엔드 연결이 끊어졌습니다.")
-
+            print("[웹소켓] 연결 해제")
+    
+# ==========================================
+# 애플리케이션 시작점
+# ==========================================
 async def main():
+    # 1. 백그라운드 워커를 이벤트 루프에 미리 등록하여 실행
+    worker_task = asyncio.create_task(background_audio_worker())
+    
+    # 2. 웹소켓 서버 시작
     server = await websockets.serve(handle_client, "0.0.0.0", 8765)
-    print("🚀 파이썬 하드웨어 에이전트 시작됨 (ws://0.0.0.0:8765)")
+    print("[Edge] 라즈베리 파이 엣지 서버 가동 시작 (포트: 8765)")
+    
     await server.wait_closed()
+    
+    # 워커 종료 처리 (서버가 닫힐 때)
+    worker_task.cancel()
 
 if __name__ == "__main__":
     asyncio.run(main())

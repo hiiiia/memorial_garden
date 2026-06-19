@@ -1,75 +1,48 @@
 from openai import OpenAI
-import base64
 
-
-
-# response = client.chat.completions.create(
-#     model="gemma4:12b",
-#     messages=[
-#         {"role": "system", "content": "상황에 맞는 이미지를 생성하세요"},
-#         {"role" : "user", "content" : "따뜻하고 화사한 햇살이 비치는 푸른 동네 뒷산 산책로를 걷고 있는 노인의 뒷모습. 마음속으로 떠올리는 듯, 어린아이와 손을 잡고 다정하게 산을 오르는 옛 추억의 실루엣이 부드럽고 따뜻한 수채화 톤으로 표현된 일러스트."}
-#     ],
-# )
-
+# GX10 로컬 서버의 Ollama 주소
 client = OpenAI(
     base_url="http://codu.ddns.net:11434/v1",
-    api_key="ollama"
- )
-prompt_text = "따뜻하고 화사한 햇살이 비치는 푸른 동네 뒷산 산책로를 걷고 있는 노인의 뒷모습. 마음속으로 떠올리는 듯, 어린아이와 손을 잡고 다정하게 산을 오르는 옛 추억의 실루엣이 부드럽고 따뜻한 수채화 톤으로 표현된 일러스트."
-response = client.responses.create(
-    model="gemma4:12b",
-    input=prompt_text  # Pass the string directly
- )
+    api_key="ollama" # (Ollama는 사실 api key를 무시하지만 형식상 유지)
+)
 
-try:
-    print(type(response)) #Check the type of response
-    print("=================================")
-    print(response.__dict__) # print the content of object to see what is inside.
+# 💡 추천 모델 적용 (Qwen 2.5 3B)
+LLM_MODEL = "qwen2.5:3b"
 
-except Exception as e :
-    print("Error while printing response:",e)
-     
-# import os
-# import certifi
-# import asyncio
-# import ssl
-# from datetime import datetime
+def get_routing_from_gx10(raw_text):
+    print(f"🚀 GX10 서버({LLM_MODEL})로 라우팅 요청 중...")
+    
+    # 앞서 구성한 퓨샷(Few-shot) 메시지 배열을 그대로 사용
+    messages = [
+        {"role": "system", "content": "당신은 독거노인을 위한 로봇의 라우터입니다. JSON만 출력하세요... (생략)"},
+        {"role": "user", "content": "오늘 비가 오네."},
+        {"role": "assistant", "content": '{"intent": "SIMPLE_CHAT", "privacy_flag": false, "local_action": null, "local_reply": "비가 오니 따뜻한 차 한 잔 어떠세요?"}'},
+        {"role": "user", "content": raw_text}
+    ]
 
-# if hasattr(ssl.SSLContext, '_load_windows_store_certs'):
-#     ssl.SSLContext._load_windows_store_certs = lambda self, storename, purpose: None
-
-# import edge_tts
-
-# async def generate_tts_audio_edge(text: str, job_id: str) -> str:
-#     """Edge-TTS를 사용하여 무료로 고음질 음성을 생성합니다."""
-#     # 1. 오늘 날짜로 폴더 경로 만들기 (예: shared_uploads/20260611)
-#     today_str = datetime.now().strftime("%Y%m%d")
-#     base_dir = os.path.join("shared_uploads", today_str)
-    
-#     # 폴더가 없으면 자동으로 생성
-#     os.makedirs(base_dir, exist_ok=True)
-    
-#     # 2. 최종 저장 경로와 URL 세팅
-#     file_name = f"reply_{job_id}.mp3"
-#     save_path = os.path.join(base_dir, file_name)
-#     static_url = f"http://localhost:8000/static/{today_str}/{file_name}"
-    
-#     voice = "ko-KR-SunHiNeural"
-    
-#     print(f"[TTS] 🎙️ 무료 음성 생성 요청 중... (Text: {text[:15]}...)")
-    
-#     try:
-#         communicate = edge_tts.Communicate(text, voice)
-#         await communicate.save(save_path)
+    try:
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages,
+            temperature=0.0,
+            # 🌟 매우 중요: Ollama에게 JSON 포맷 강제
+            response_format={"type": "json_object"} 
+        )
         
-#         print(f"[TTS] ✅ 무료 음성 파일 생성 완료: {save_path}")
-#         return static_url
-#     except Exception as e:
-#         print(f"[TTS Error] 음성 생성 실패: {e}")
-#         return None
+        # Ollama가 반환한 JSON 문자열 파싱
+        result_json = response.choices[0].message.content
+        return result_json
 
-# if __name__ == "__main__":
-#     test_text = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. 옛날에 우리 영수 어릴 때 같이 손잡고 올라가던 기억이 나서 기분이 참 좋더라구."
+    except Exception as e:
+        print(f"❌ GX10 서버 통신 에러: {e}")
+        return None
     
-#     # async 함수를 동기 환경에서 실행하는 방법
-#     asyncio.run(generate_tts_audio_edge(job_id="asdfasf", text=test_text))
+# test.py 맨 아래 추가/수정
+if __name__ == "__main__":
+    test_text = "오늘 비가 오네, 무릎이 쑤신다."
+    
+    # 함수 실행 결과를 변수에 담고
+    result = get_routing_from_gx10(test_text)
+    
+    # 화면에 출력!
+    print("✨ [최종 결과]:", result)

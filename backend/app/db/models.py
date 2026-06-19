@@ -87,38 +87,44 @@ class Log(Base):
 
     id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
     dependent_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), nullable=False)
-    file_url = Column(String(255), nullable=False)
     
-    # 생성된 AI 그림일기 이미지 URL 저장용
-    image_url = Column(String(500), nullable=True)
-    status = Column(String(20), default="PROCESSING", nullable=False)
-    
-    # text 타입 적용 완료
-    stt_text = Column(Text, nullable=True)      
-    reply_text = Column(Text, nullable=True)   
-    reply_audio_url = Column(String(500), nullable=True) 
-    
-    # 건강 지표 세분화 점수
-    risk_score = Column(Float, default=0.0, nullable=False)
-    depression_score = Column(Float, default=0.0, nullable=False)        # 추가!
-    cognitive_decline_score = Column(Float, default=0.0, nullable=False) # 추가!
-    
-    primary_emotion = Column(String(20), nullable=True)    
-    llm_summary = Column(Text, nullable=True)       
-    
-    # 프론트엔드 달력 UI용 텍스트 및 해시태그
-    diary_text = Column(Text, nullable=True) # 추가! (동화풍 그림일기 본문)
-    keywords = Column(Text, nullable=True)   # 추가! (해시태그 - 콤마로 구분하여 저장)
-    
-    # 어르신 장기 기억(RAG)용 벡터 컬럼
-    # 구글 gemini-embedding-2 모델의 출력 차원인 3072에 맞춤
-    vector_embedding = Column(Vector(3072), nullable=True)
-    
+    # ==========================================
+    # 1. 헬스케어 메타 데이터
+    # ==========================================
+    status = Column(String(20), default="COMPLETED", nullable=False)
     created_at = Column(DateTime, server_default=func.now(), index=True)
 
+    # ==========================================
+    # 2. AI 심층 분석 결과 (의료/정서 지표)
+    # ==========================================
+    risk_score = Column(Float, default=0.0, nullable=False)
+    depression_score = Column(Float, default=0.0, nullable=False)        
+    cognitive_decline_score = Column(Float, default=0.0, nullable=False) 
+    primary_emotion = Column(String(20), nullable=True)    
+    
+    # 원문 텍스트를 대체하는 유일한 '임상 소견 요약본'
+    llm_summary = Column(Text, nullable=True)       
+    
+    # ==========================================
+    # 3. 그림일기 데이터 (시각적 테라피)
+    # ==========================================
+    image_url = Column(String(500), nullable=True)
+    diary_text = Column(Text, nullable=True) 
+    keywords = Column(Text, nullable=True)   
+    
+    # ==========================================
+    # 4. 음향 바이오마커 (Z-Score 정밀 통계용)
+    # ==========================================
+    speech_rate = Column(Float, nullable=True)    # 말하기 속도
+    pause_ratio = Column(Float, nullable=True)    # 침묵 비율
+    pitch_variance = Column(Float, nullable=True) # 목소리 단조로움 지표
+
+    # ==========================================
+    # Relationships
+    # ==========================================
     dependent = relationship("Dependent", back_populates="logs")
     alerts = relationship("Alert", back_populates="log")
-    
+
 class Alert(Base):
     __tablename__ = "alerts"
 
