@@ -22,7 +22,6 @@ TEST_INPUT_TEXT = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 
 # ==========================================
 AI_SERVER_URL = settings.AI_SERVER_URL
 DEPENDENT_ID = settings.DEPENDENT_ID
-BACKEND_CALLBACK_URL = settings.BACKEND_URL + "api/v1/callbacks/jobs/analyzing-result"
 BASE_DIR = "/app/data"
 # ==========================================
 # [로컬] STT 및 오디오 분석 모듈
@@ -133,7 +132,6 @@ async def background_audio_worker():
                 data = aiohttp.FormData()
                 data.add_field('user_id', user_id)
                 data.add_field('stt_text', stt_text)
-                data.add_field('callback_url', BACKEND_CALLBACK_URL) 
                 data.add_field('file', open(wav_path, 'rb'), filename='input.wav', content_type='audio/wav')
 
                 url = f"{AI_SERVER_URL}/api/v1/analyze/audio"

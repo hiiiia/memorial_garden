@@ -213,7 +213,6 @@ async def analyze_audio_background(
     file: UploadFile = File(...),         
     user_id: str = Form(...),             
     stt_text: str = Form(...),
-    callback_url: str = Form(...)
 ):
     job_id = uuid.uuid4().hex
     temp_file_path = f"/tmp/{job_id}_{file.filename}"
@@ -229,7 +228,7 @@ async def analyze_audio_background(
         user_id=user_id, 
         stt_text=stt_text, 
         job_id=job_id,
-        callback_url=callback_url
+        callback_url=f"{settings.BACKEND_URL}api/v1/callbacks/jobs/analyze-result"
     )
     return {"message": "Audio processing started in background."}
 
