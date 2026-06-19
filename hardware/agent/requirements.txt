@@ -8,3 +8,6 @@ gTTS==2.4.0
 openai
 chromadb
 sentence-transformers
+sounddevice
+soundfile
+numpy
