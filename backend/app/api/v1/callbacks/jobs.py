@@ -1,5 +1,5 @@
 # backend\app\api\v1\callbacks\jobs.py
-from fastapi import APIRouter, Header, HTTPException, Depends
+from fastapi import APIRouter, Header, HTTPException, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import os
@@ -8,6 +8,7 @@ import aiofiles
 import asyncio
 from datetime import datetime
 from typing import Optional
+import uuid 
 
 # openAPI TTS 사용시 edge-tts는 주석처리
 # import edge_tts
@@ -44,36 +45,67 @@ class LogCreateRequest(BaseModel):
     analysis_data: HealthcareAnalysisData
 
 @router.post("/analyze-result", summary="AI 서버 심층 분석 결과 다이렉트 적재")
-def receive_healthcare_log(request: LogCreateRequest, db: Session = Depends(get_db)):
+async def receive_healthcare_log(
+    request: LogCreateRequest, 
+    req: Request, # 서버의 기본 도메인을 동적으로 가져오기 위해 추가
+    db: Session = Depends(get_db)
+):
     """
-    AI 서버가 비동기로 분석을 완료한 헬스케어 데이터(감정, 인지, 우울증 지수 등)를 DB에 저장.
+    AI 서버가 비동기로 분석을 완료한 헬스케어 데이터를 DB에 저장.
+    이미지 URL이 포함되어 있다면 백엔드 서버로 다운로드 후 로컬 URL로 변환하여 적재.
     """
     try:
-        # 실패 상태로 넘어온 경우 처리
         if request.status == "FAILED":
             print(f"[Backend] AI 서버 분석 실패 로그 수신: {request.error_message}")
-            # 필요하다면 실패 로그도 DB에 상태를 FAILED로 남길 수 있습니다.
             return {"message": "Failure log received safely."}
 
         analysis = request.analysis_data
+        
+        # 1. 이미지 다운로드 및 로컬 URL 변환 로직
+        final_image_url = analysis.image_url
 
-        # Log 테이블에 새 레코드 생성
+        if final_image_url and final_image_url.startswith("http"):
+            save_dir = "/app/uploads/diary_images" # 서버 환경에 맞춰 경로 수정
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # 충돌 방지를 위해 UUID로 고유 파일명 생성
+            unique_filename = f"diary_{uuid.uuid4().hex}.png"
+            save_path = os.path.join(save_dir, unique_filename)
+            
+            try:
+                print(f"[Backend] AI 서버로부터 이미지를 다운로드합니다: {final_image_url}")
+                # 비동기로 이미지 다운로드
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    img_response = await client.get(final_image_url)
+                    img_response.raise_for_status()
+                    
+                    with open(save_path, "wb") as f:
+                        f.write(img_response.content)
+                
+                # Request 객체를 사용해 현재 백엔드 도메인을 동적으로 획득 (예: http://localhost:8000)
+                base_url = str(req.base_url).rstrip("/")
+                final_image_url = f"{base_url}/static/diary_images/{unique_filename}"
+                print(f"[Backend] 로컬 저장 완료. DB 적재 URL: {final_image_url}")
+                
+            except Exception as img_err:
+                print(f"[Backend Error] 이미지 다운로드 실패 (원본 URL 유지): {img_err}")
+                # 실패하면 원본 URL을 그대로 유지하도록 처리
+
+        # 2. Log 테이블에 새 레코드 생성
         new_log = models.Log(
             dependent_id=request.user_id,
             status=request.status,
             
-            # AI 심층 분석 지표
             risk_score=analysis.risk_score,
             depression_score=analysis.depression_score,
             cognitive_decline_score=analysis.cognitive_decline_score,
             primary_emotion=analysis.primary_emotion,
             llm_summary=analysis.llm_summary,
             
-            # 그림일기 데이터
-            image_url=analysis.image_url,
+            # 변환된 로컬 URL(또는 원본) 적재
+            image_url=final_image_url, 
             diary_text=analysis.diary_text,
             
-            # 음향 바이오마커 (정밀 통계용)
             speech_rate=analysis.speech_rate,
             pause_ratio=analysis.pause_ratio,
             pitch_variance=analysis.pitch_variance
@@ -91,7 +123,7 @@ def receive_healthcare_log(request: LogCreateRequest, db: Session = Depends(get_
         print(f"[Backend Error] 로그 저장 중 DB 오류 발생: {e}")
         raise HTTPException(status_code=500, detail="Database insertion failed.")
     
-
+    
 # # --- 1. Pydantic 스키마 정의 ---
 # class AnalysisData(BaseModel):
 #     risk_score: float

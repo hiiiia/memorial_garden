@@ -1,6 +1,6 @@
 # C:\Users\User\Documents\memorial_garden\backend\app\main.py
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -81,14 +81,27 @@ app.add_middleware(
 
 
 
-# WAV 음성 공유 마운트 폴더 생성
-os.makedirs("shared_uploads", exist_ok=True)
-app.mount("/static", StaticFiles(directory="shared_uploads"), name="static")
+# # 1. 절대 경로로 안전하게 폴더 생성 (음성 파일 전용)
+# AUDIO_SAVE_DIR = "/app/uploads/shared_audio"
+# os.makedirs(AUDIO_SAVE_DIR, exist_ok=True)
+
+# # '/static/audio'로 분리하여 마운트
+# app.mount("/static/audio", StaticFiles(directory=AUDIO_SAVE_DIR), name="static_audio")
+
+# 이미지용 마운트
+app.mount("/static/diary_images", StaticFiles(directory="/app/uploads/diary_images"), name="diary_images")
+
 
 # 라우터 등록 (이 한 줄로 모든 api/v1/... 경로가 활성화됩니다!)
 app.include_router(api_router, prefix="/api/v1")
+
+# 사파리 브라우저 아이콘 요청시 void return
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(content=b"", media_type="image/x-icon")
 
 # (Root Endpoint)
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Central API Server"}
+

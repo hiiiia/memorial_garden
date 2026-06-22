@@ -8,10 +8,7 @@ cd C:\Users\User\Documents\memorial_garden\hardware
 docker compose build --no-cache frontend
 docker compose up -d
 
-# typescript 변경
-cd C:\Users\User\Documents\memorial_garden\hardware\frontend
-docker run --rm -v "%cd%":/app -w /app node:18-alpine npm install --save typescript @types/node @types/react @types/react-dom @types/jest
+==========================
 
 
-(test_ai) C:\Users\User\Documents\memorial_garden>cd hardware
-(test_ai) C:\Users\User\Documents\memorial_garden\hardware>docker compose up -d --build
+sudo docker run --rm -v "$(pwd)":/app -w /app node:18-alpine npx create-react-app temp --template typescript
