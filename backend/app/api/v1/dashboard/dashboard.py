@@ -225,10 +225,10 @@ def get_diary_detail(
     diary_data = {
         "log_id": log.id,
         "date": target_date.strftime("%Y-%m-%d"),
-        "image_url": log.image_url if log.image_url else "https://via.placeholder.com/800x400?text=No+Image", 
+        "image_url": log.image_url if log.image_url else "https://via.placeholder.com/800x400?text=No+Image",
         "primary_emotion": log.primary_emotion or "보통",
-        "stt_text": log.stt_text,       # 어르신 발화
-        "reply_text": log.reply_text,   # AI 답변
+        "stt_text": "",       # 어르신 발화
+        "reply_text": "",   # AI 답변
         "diary_text": log.diary_text or log.llm_summary, # 동화풍 그림일기 내용 본문
         "summary": log.llm_summary,     # 임상 분석용 내부 요약
         "keywords": kw_list
@@ -383,7 +383,7 @@ def get_monthly_diary_payload(
             "date": log_date_str,
             "depressionScore": int(raw_dep * 100) if raw_dep <= 1.0 else int(raw_dep),
             "dementiaScore": int(raw_cog * 100) if raw_cog <= 1.0 else int(raw_cog),
-            "insight": log.reply_text or log.llm_summary or "안정적인 대화 패턴이 유지되고 있습니다."
+            "insight": log.llm_summary or "안정적인 대화 패턴이 유지되고 있습니다."
         })
 
     # 5. 완성된 월간 패키지 응답 반환
