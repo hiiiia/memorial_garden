@@ -68,26 +68,39 @@ async def send_failed_callback(callback_url: str, user_id: str, headers: dict, e
         print(f"[AI Fatal Error] FAILED 콜백 전송 실패: {str(callback_err)}")
         save_failed_callback_to_local(job_id=job_id, user_id=user_id, payload=error_callback_body, error_reason=str(callback_err))
 
-async def generate_diary_image(image_prompt: str, job_id: str) -> str:
-    """더미 이미지 다운로드 (테스트용)"""
-    if not image_prompt: return ""
-    print("[AI Image] 테스트용 임시 이미지를 다운로드합니다...")
-    dummy_url = "https://placehold.co/512x512/e2e8f0/475569.png?text=Picture+Diary+Test"
-    save_dir = "/app/uploads/diary_images"
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, f"diary_{job_id}.png")
-    try:
-        async with httpx.AsyncClient() as http_client:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = await http_client.get(dummy_url, headers=headers, timeout=30.0)
-            response.raise_for_status()
-            with open(save_path, "wb") as f:
-                f.write(response.content)
-        return f"http://localhost:8000/static/diary_images/diary_{job_id}.png"
-    except Exception as e:
-        print(f"[AI Image Error] 더미 이미지 다운로드 실패: {str(e)}")
-        return ""
 
+async def generate_diary_image(image_prompt: str, job_id: str) -> str:
+    """실제 AI 이미지 생성 API 호출 및 AI 서버 URL 직접 반환"""
+    if not image_prompt: return ""
+    print(f"[AI Image] 실제 API로 이미지 생성을 요청합니다. 프롬프트: {image_prompt[:20]}...")
+    
+    # 1. 방금 구축한 실제 API 엔드포인트와 규격 세팅
+    api_url = "http://codu.ddns.net:11435/v1/images/generations"
+    payload = {
+        "prompt": image_prompt,
+        "model": "flux_schnell"
+    }
+    
+    try:
+        # LLM 번역 + 이미지 생성이 있으므로 타임아웃을 넉넉히(120초) 줍니다.
+        async with httpx.AsyncClient(timeout=120.0) as http_client:
+            
+            # Step 1: 서버에 이미지 생성 요청 (POST)
+            response = await http_client.post(api_url, json=payload)
+            response.raise_for_status()
+            
+            # Step 2: 응답 JSON에서 완성된 이미지의 URL 추출
+            result_data = response.json()
+            generated_image_url = result_data["data"][0]["url"]
+            print(f"[AI Image] 생성 완료! AI 서버의 이미지 URL을 반환합니다: {generated_image_url}")
+            
+        #  다운로드하지 않고, AI 서버의 URL을 그대로 반환
+        return generated_image_url
+        
+    except Exception as e:
+        print(f"[AI Image Error] 실제 이미지 생성 실패: {str(e)}")
+        return ""
+    
 def _extract_biomarkers_sync(wav_path: str) -> dict:
     """[동기 함수] 오디오 파형에서 바이오마커 수치를 추출합니다."""
     try:
