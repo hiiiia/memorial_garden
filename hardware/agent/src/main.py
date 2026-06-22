@@ -17,16 +17,18 @@ TEST_MODE = True
 TEST_INPUT_FILE = "test_1.mp3"  # 실제 테스트용 파일 경로 (미리 준비 필요)
 TEST_INPUT_TEXT = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. 옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구"
 
-# ==========================================
-# 기기의 고유 MAC 주소를 가져오는 함수
-# ==========================================
-def get_mac_address():
-    mac_num = hex(uuid.getnode()).replace('0x', '').upper()
-    mac = '-'.join(mac_num[i: i + 2] for i in range(0, 11, 2))
-    return mac
-# MAC 주소를 전역 변수로 세팅
-HW_MAC_ADDRESS = get_mac_address()
+### 도커 환경에서는 계속 변경됨.
+# # ==========================================
+# # 기기의 고유 MAC 주소를 가져오는 함수
+# # ==========================================
+# def get_mac_address():
+#     mac_num = hex(uuid.getnode()).replace('0x', '').upper()
+#     mac = '-'.join(mac_num[i: i + 2] for i in range(0, 11, 2))
+#     return mac
+# # MAC 주소를 전역 변수로 세팅
+# HW_MAC_ADDRESS = get_mac_address()
 
+HW_MAC_ADDRESS = settings.RASPI_MAC
 # ==========================================
 # 환경 설정 (라즈베리 파이 Docker 환경)
 # ==========================================

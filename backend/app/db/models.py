@@ -41,7 +41,7 @@ class Dependent(Base):
     
     name = Column(String(50), nullable=False)
     age = Column(Integer, nullable=False)
-    device_token = Column(String(100), unique=True, index=True, nullable=False)
+    device_token = Column(Text, unique=True, index=True, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
     # 매핑 테이블 및 기존 관계 설정
