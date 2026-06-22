@@ -119,7 +119,7 @@ const DiaryPage = () => {
 
       {/* 그림일기 이미지 영역 */}
       <div style={{ width: '100%', borderRadius: '16px', overflow: 'hidden', marginBottom: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-        <img src={diaryData.image_url} alt="AI 그림일기" style={{ width: '100%', height: 'auto', display: 'block' }} onError={(e) => {e.currentTarget.src = 'https://via.placeholder.com/600x400?text=Image+Not+Found';}}/>
+        <img src={diaryData.image_url} alt="AI 그림일기" style={{ width: '100%', height: 'auto', display: 'block' }} onError={(e) => {e.currentTarget.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"%3E%3Crect fill="%23e2e8f0" width="400" height="300"/%3E%3Ctext fill="%23475569" font-family="sans-serif" font-size="20" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage Not Found%3C/text%3E%3C/svg%3E';}}/>
       </div>
 
       {/* 키워드 및 요약 영역 */}

@@ -16,46 +16,54 @@ const LoginPage = ({ setIsLoggedIn }: LoginPageProps) => {
 
   const navigate = useNavigate();
 
+const handleNormalLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  setErrorMsg('');
 
-  const handleNormalLogin = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setErrorMsg('');
+  const formData = new URLSearchParams();
+  formData.append('username', username);
+  formData.append('password', password);
 
-    const formData = new URLSearchParams();
-    formData.append('username', username);
-    formData.append('password', password);
+  try {
+    const response = await fetch(`${config.apiBaseUrl}api/v1/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData,
+    });
 
-    try {
-      const response = await fetch(`${config.apiBaseUrl}api/v1/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData, // URLSearchParams 객체는 브라우저가 알아서 변환해 줍니다.
-      });
+    const data = await response.json();
 
-      const data = await response.json();
-
-      if (response.ok) {
-        // 성공 시 토큰과 유저 정보 저장
-        const token = data.data?.access_token || data.access_token;
-        const guardianInfo = data.data?.guardian || data.guardian;
-        
-        // 2. 안전하게 저장
-        if (token) localStorage.setItem('access_token', token);
-        if (guardianInfo) localStorage.setItem('guardian_info', JSON.stringify(guardianInfo));
-        // 로그인 됨(true)으로 변경
-        setIsLoggedIn(true);
-
-
-        navigate('/', { replace: true });
+    if (response.ok) {
+      // 성공 시 토큰과 유저 정보 저장
+      const token = data.data?.access_token || data.access_token;
+      const guardianInfo = data.data?.guardian || data.guardian;
+      
+      // 1. 토큰 및 가디언 정보 저장
+      if (token) localStorage.setItem('access_token', token);
+      if (guardianInfo) localStorage.setItem('guardian_info', JSON.stringify(guardianInfo));
+      
+      // 2. 대시보드 동기화를 위한 어르신 연동 ID 처리 로직 추가
+      if (guardianInfo && guardianInfo.dependent_id) {
+        localStorage.setItem('dependent_id', guardianInfo.dependent_id);
+        console.log("일반 로그인 - 연동된 어르신 ID 저장 완료:", guardianInfo.dependent_id);
       } else {
-        setErrorMsg(data.error || '로그인에 실패했습니다.');
+        // 연동된 어르신이 없다면 기존 로컬 스토리지 값을 깔끔하게 삭제
+        localStorage.removeItem('dependent_id');
+        console.log("일반 로그인 - 연동된 어르신 없음");
       }
-    } catch (err) {
-      setErrorMsg('서버와 연결할 수 없습니다.');
+
+      // 로그인 상태 활성화 및 페이지 이동
+      setIsLoggedIn(true);
+      navigate('/', { replace: true });
+    } else {
+      setErrorMsg(data.error || '로그인에 실패했습니다.');
     }
-  };
+  } catch (err) {
+    setErrorMsg('서버와 연결할 수 없습니다.');
+  }
+};
 
   const handleKakaoLogin = () => {
     const KAKAO_CLIENT_ID = config.kakaoClientId; 

@@ -73,13 +73,10 @@ async def db_operational_error_handler(request: Request, exc: OperationalError):
 # CORS 미들웨어 설정 (반드시 app.include_router 보다 위에 작성)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",   # 로컬 React 환경 허용
-        "http://172.18.0.2:3000"   # 도커 내부 네트워크 IP도 혹시 모르니 허용
-    ],
+    allow_origins=settings.ALLOWED_ORIGINS, # 리스트 형태로 깔끔하게 주입
     allow_credentials=True,
-    allow_methods=["*"],           # GET, POST, PUT, DELETE 등 모든 행동 허용
-    allow_headers=["*"],           # 모든 헤더 데이터 허용
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

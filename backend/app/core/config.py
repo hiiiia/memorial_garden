@@ -34,6 +34,13 @@ class Settings:
     # 특수문자 방어용 비밀번호 인코딩
     SAFE_PASSWORD = quote_plus(DB_PASSWORD)
     
+    _origins_str = os.getenv(
+        "ALLOWED_ORIGINS", 
+        "http://localhost:3000,http://192.168.1.82:3000"
+    )
+    # 콤마로 쪼개고 좌우 공백을 제거하여 리스트로 만듭니다.
+    ALLOWED_ORIGINS: list[str] = [origin.strip() for origin in _origins_str.split(",") if origin.strip()]
+    
     
     # 토큰
     API_SECRET_TOKEN: str = os.getenv("API_SECRET_TOKEN","default-token")

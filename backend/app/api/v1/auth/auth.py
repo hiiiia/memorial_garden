@@ -8,7 +8,7 @@ import uuid
 from pydantic import BaseModel
 
 from db.database import get_db
-from db.models import Guardian
+from db.models import Guardian, GuardianDependentMapping
 from core.config import settings
 from core.response import unified_response
 from api.v1.deps import get_current_user
@@ -61,6 +61,20 @@ def login(
         data={"sub": str(guardian.id), "email": guardian.email}
     )
     
+    linked_mapping = (
+        db.query(GuardianDependentMapping)
+        .filter(
+            GuardianDependentMapping.guardian_id == guardian.id,
+            GuardianDependentMapping.status == "CONNECTED" # 수락된 상태만
+        )
+        .order_by(GuardianDependentMapping.created_at.desc()) # (선택) 가장 최근 연동된 사람 우선
+        .first()
+    )
+    
+    # 매핑 데이터가 있다면 dependent_id를 추출, 없으면 None
+    dependent_id = str(linked_mapping.dependent_id) if linked_mapping else None
+    
+    
     # unified_response로 규격 통일
     return unified_response(
         status_code=200,
@@ -72,7 +86,8 @@ def login(
                 "id": str(guardian.id),
                 "username": guardian.username,
                 "name": guardian.name,
-                "email": guardian.email
+                "email": guardian.email,
+                "dependent_id": dependent_id
             }
         }
     )
@@ -172,6 +187,21 @@ async def kakao_login(request: KakaoLoginRequest, db: Session = Depends(get_db))
         data={"sub": str(guardian.id), "email": guardian.email} 
     )
     
+    linked_mapping = (
+        db.query(GuardianDependentMapping)
+        .filter(
+            GuardianDependentMapping.guardian_id == guardian.id,
+            GuardianDependentMapping.status == "CONNECTED" # 수락된 상태만
+        )
+        .order_by(GuardianDependentMapping.created_at.desc()) # (선택) 가장 최근 연동된 사람 우선
+        .first()
+    )
+    
+    # 매핑 데이터가 있다면 dependent_id를 추출, 없으면 None
+    dependent_id = str(linked_mapping.dependent_id) if linked_mapping else None
+    
+    
+    
     return unified_response(
         status_code=200,
         message="카카오 연동 및 로그인 성공",
@@ -181,7 +211,8 @@ async def kakao_login(request: KakaoLoginRequest, db: Session = Depends(get_db))
             "guardian": {
                 "id": str(guardian.id),
                 "name": guardian.name,
-                "email": guardian.email
+                "email": guardian.email,
+                "dependent_id": dependent_id  # 연동된 어르신 정보 포함
             }
         }
     )

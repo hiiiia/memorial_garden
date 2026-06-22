@@ -420,7 +420,7 @@ const DashboardPage = () => {
               {activeTab === 'diary' && selectedDiary && (
                 <div className="diary-card interactive" onClick={() => navigate(`/diary?date=${selectedDateStr}`)}>
                   {/* 회색 대체 이미지 */}
-                  <img src={selectedDiary.image_url} alt="AI 그림일기" className="diary-img" onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=Image+Not+Found'; }} />
+                  <img src={selectedDiary.image_url} alt="AI 그림일기" className="diary-img" onError={(e) => { e.currentTarget.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"%3E%3Crect fill="%23e2e8f0" width="400" height="300"/%3E%3Ctext fill="%23475569" font-family="sans-serif" font-size="20" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage Not Found%3C/text%3E%3C/svg%3E'; }} />
                   <div className="diary-content-box">
                     <p className="diary-text">{selectedDiary.summary}</p>
                     <div className="keyword-container">
