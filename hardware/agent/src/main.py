@@ -36,7 +36,7 @@ DEPENDENT_NAME = None
 DEVICE_API_KEY = settings.HW_TOKEN
 BASE_DIR = "/app/data"
 
-BACKEND_URL = os.getenv("BACKEND_URL")
+BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
 
 # ==========================================
