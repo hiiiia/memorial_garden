@@ -46,7 +46,7 @@ async def boot_and_authenticate():
     """부팅 시 MAC 주소 기반으로 서버에 등록하고 JWT 토큰을 발급받음"""
     global DEPENDENT_ID, DEPENDENT_NAME, DEVICE_TOKEN
     
-    url = f"{BACKEND_URL}/api/v1/auth/device/register"
+    url = f"{BACKEND_URL}/api/v1/dependent/device/register"
     
     # 기본 정보 셋팅 (이후에 보호자 앱에서 변경 가능)
     payload = {
