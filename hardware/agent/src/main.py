@@ -64,19 +64,28 @@ async def boot_and_authenticate():
             async with session.post(url, json=payload, timeout=5) as response:
                 res_json = await response.json()
                 
-                # 200(기존 기기) 또는 201(신규 등록) 모두 성공 처리
-                if response.status in [200, 201] and res_json.get("status_code") in [200, 201]:
-                    auth_data = res_json.get("data", {})
+                # 🌟 [디버깅] 백엔드가 실제로 어떤 JSON을 주는지 터미널에 찍어봅니다.
+                print(f"🛠️ 백엔드 응답 데이터: {res_json}")
+                
+                # 🌟 JSON 본문(status_code) 검사 조건 제거, HTTP 상태 코드로만 성공 판단
+                if response.status in [200, 201]:
+                    # data가 None일 경우를 대비해 빈 딕셔너리로 폴백(or {})
+                    auth_data = res_json.get("data") or {} 
                     
-                    # 🌟 백엔드가 직접 빚어준 JWT 토큰과 ID를 전역 변수에 저장!
                     DEVICE_TOKEN = auth_data.get("access_token")
                     DEPENDENT_ID = auth_data.get("dependent_id")
                     DEPENDENT_NAME = payload["name"]
                     
-                    print(f"✅ 기기 셋업 완료! [JWT 토큰 발급 성공]")
-                    return True
+                    if DEVICE_TOKEN and DEPENDENT_ID:
+                        print(f"✅ 기기 셋업 완료! [JWT 토큰 발급 성공]")
+                        return True
+                    else:
+                        print("❌ 성공 응답을 받았지만, 데이터(Token/ID)가 누락되었습니다.")
+                        return False
                 else:
-                    print(f"❌ 기기 셋업 실패: {res_json.get('error', '서버 에러')}")
+                    # 실패 시 백엔드가 보낸 에러 메시지 출력
+                    error_msg = res_json.get('error', res_json.get('message', '알 수 없는 서버 에러'))
+                    print(f"❌ 기기 셋업 실패 (HTTP {response.status}): {error_msg}")
                     return False
         except Exception as e:
             print(f"❌ 서버 연결 에러: {e}")
