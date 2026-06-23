@@ -9,6 +9,7 @@ ws_router = APIRouter()
 @ws_router.websocket("/device/{dependent_id}")
 async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
     
+    
     # 1. 헤더에서 토큰 추출
     auth_header = websocket.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):

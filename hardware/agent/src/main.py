@@ -35,7 +35,8 @@ HW_MAC_ADDRESS = settings.RASPI_MAC
 AI_SERVER_URL = settings.AI_SERVER_URL
 DEPENDENT_ID = settings.DEPENDENT_ID
 DEPENDENT_NAME = None
-DEVICE_API_KEY = settings.HW_TOKEN
+DEVICE_HW_KEY = settings.HW_TOKEN
+DEVICE_AI_KEY = settings.AI_TOKEN
 BASE_DIR = "/app/data"
 
 BACKEND_URL = settings.BACKEND_URL
@@ -52,9 +53,15 @@ cloud_outbound_queue = asyncio.Queue()
 # 부팅 시 자동 등록 및 인증 통합 함수
 # ==========================================
 async def boot_and_authenticate():
-    """부팅 시 MAC 주소 기반으로 서버에 등록하고 JWT 토큰을 발급받음"""
-    global DEPENDENT_ID, DEPENDENT_NAME, DEVICE_TOKEN
+    """부팅 시 MAC 주소와 HW_SECRET_KEY 기반으로 서버에 등록하고 JWT 토큰을 발급받음"""
+    global DEPENDENT_ID, DEPENDENT_NAME, DEVICE_TOKEN, DEVICE_HW_KEY
     
+    # 환경변수에서 하드웨어 시크릿 키 로드 (없으면 진행 불가)
+    # (앞서 .env에 설정한 변수명에 맞게 "DEVICE_HW_KEY" 사용)
+    if not DEVICE_HW_KEY:
+        print("❌ 에러: .env 파일에 DEVICE_HW_KEY(하드웨어 보안 키)이 설정되지 않았습니다.")
+        return False
+        
     url = f"{BACKEND_URL}/api/v1/dependent/device/register"
     
     # 기본 정보 셋팅 (이후에 보호자 앱에서 변경 가능)
@@ -65,18 +72,22 @@ async def boot_and_authenticate():
         "age": int(os.getenv("DEPENDENT_AGE", 75))
     }
     
+    #  백엔드의 HTTPBearer(validate_hw_key)가 인식할 수 있도록 헤더 구성
+    headers = {
+        "Authorization": f"Bearer {DEVICE_HW_KEY}"
+    }
+    
     print(f"📡 백엔드 서버와 통신 중... (MAC: {HW_MAC_ADDRESS})")
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(url, json=payload, timeout=5) as response:
+            # post 요청 시 headers 옵션 추가
+            async with session.post(url, json=payload, headers=headers, timeout=5) as response:
                 res_json = await response.json()
                 
-                # 🌟 [디버깅] 백엔드가 실제로 어떤 JSON을 주는지 터미널에 찍어봅니다.
                 print(f"🛠️ 백엔드 응답 데이터: {res_json}")
                 
-                # 🌟 JSON 본문(status_code) 검사 조건 제거, HTTP 상태 코드로만 성공 판단
+                # HTTP 상태 코드로만 성공 판단
                 if response.status in [200, 201]:
-                    # data가 None일 경우를 대비해 빈 딕셔너리로 폴백(or {})
                     auth_data = res_json.get("data") or {} 
                     
                     DEVICE_TOKEN = auth_data.get("access_token")
@@ -84,14 +95,13 @@ async def boot_and_authenticate():
                     DEPENDENT_NAME = payload["name"]
                     
                     if DEVICE_TOKEN and DEPENDENT_ID:
-                        print(f"✅ 기기 셋업 완료! [JWT 토큰 발급 성공]")
+                        print(f"✅ 기기 셋업 완료! [보안 승인 및 JWT 토큰 발급 성공]")
                         return True
                     else:
                         print("❌ 성공 응답을 받았지만, 데이터(Token/ID)가 누락되었습니다.")
                         return False
                 else:
-                    # 실패 시 백엔드가 보낸 에러 메시지 출력
-                    error_msg = res_json.get('error', res_json.get('message', '알 수 없는 서버 에러'))
+                    error_msg = res_json.get('detail', res_json.get('message', '알 수 없는 서버 에러'))
                     print(f"❌ 기기 셋업 실패 (HTTP {response.status}): {error_msg}")
                     return False
         except Exception as e:

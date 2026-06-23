@@ -45,7 +45,7 @@ def verify_hw_jwt_token(token: str) -> str:
         # 1. JWT 디코딩 및 검증
         payload = jwt.decode(
             token, 
-            settings.SECRET_KEY, 
+            settings.JWT_SECRET_KEY, 
             algorithms=[settings.ALGORITHM]
         )
         
@@ -60,3 +60,16 @@ def verify_hw_jwt_token(token: str) -> str:
         raise ValueError("Token expired")
     except jwt.InvalidTokenError:
         raise ValueError("Invalid token")
+
+def validate_hw_key(
+    credentials: HTTPAuthorizationCredentials = Depends(security_bearer)
+):
+    """
+    API Key(Secret Token)만 검증
+    """
+    if not credentials or credentials.credentials != settings.HW_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API Secret Token"
+        )
+    return True # 검증 통과

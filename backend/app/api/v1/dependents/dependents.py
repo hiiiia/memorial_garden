@@ -8,6 +8,7 @@ from db.models import GuardianDependentMapping, Dependent
 #from api.v1.deps import get_current_dependent 
 from api.v1.utils.security import get_password_hash
 from api.v1.utils.jwt import create_access_token
+from api.v1.deps import validate_hw_key
 from core.response import unified_response
 import uuid
 
@@ -70,8 +71,9 @@ router = APIRouter()
     
     
 @router.post("/device/register")
-def register_device(request: DeviceRegisterRequest, db: Session = Depends(get_db)):
-    """엣지 디바이스 부팅 시 자동 등록 및 JWT 토큰(인증) 동시 발급"""
+def register_device(request: DeviceRegisterRequest, db: Session = Depends(get_db), _ = Depends(validate_hw_key)):
+    """엣지 디바이스 부팅 시 DEVICE_HW_KEY 검증
+    자동 등록 및 JWT 토큰(인증) 동시 발급"""
     
     # 1. MAC 주소를 기반으로 기기 전용 JWT 토큰 생성
     # payload의 'sub'에 MAC 주소를 넣고, 역할(role)을 device로 명시

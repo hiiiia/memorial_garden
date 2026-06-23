@@ -9,6 +9,7 @@ class Settings:
     
     RASPI_MAC : str = os.getenv("RASPI_MAC","88:a2:9e:22:4b:6b")
     # Bearer 글자는 제외하고 순수 토큰 값만 환경변수로 관리하는 것이 깔끔합니다.
+    AI_TOKEN: str = os.getenv("AI_TOKEN", "default-token")
     HW_TOKEN: str = os.getenv("HW_TOKEN", "default-token")
 
 settings = Settings()

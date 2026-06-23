@@ -45,6 +45,8 @@ class Settings:
     # 토큰
     API_SECRET_TOKEN: str = os.getenv("API_SECRET_TOKEN","default-token")
     AI_SECRET_TOKEN: str = os.getenv("AI_SECRET_TOKEN", "default-token")
+    HW_SECRET_KEY : str = os.getenv("HW_SECRET_KEY", "default-token")
+    
     OPENAI_API_KEY : str = os.getenv("OPENAI_API_KEY", "default-token")
     
     SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL", "default-token")

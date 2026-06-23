@@ -13,6 +13,8 @@ from openai import AsyncOpenAI
 
 from app.config import settings
 from app.utils.backup import save_failed_callback_to_local
+from app.deps import validate_ai_secret_token
+
 
 app = FastAPI(title="기억정원 AI Orchestrator Server")
 
@@ -37,14 +39,6 @@ class EdgeRouteRequest(BaseModel):
     user_id: str 
     text: str
     memory_context: str
-
-def verify_api_token(authorization: str = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Unauthorized. Missing token.")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or token != settings.AI_SECRET_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized. Invalid token.")
-    return token
 
 # ==========================================
 # 3. 유틸리티 및 오디오 분석 함수
@@ -226,6 +220,7 @@ async def analyze_audio_background(
     file: UploadFile = File(...),         
     user_id: str = Form(...),             
     stt_text: str = Form(...),
+    _ = Depends(validate_ai_secret_token)
 ):
     job_id = uuid.uuid4().hex
     temp_file_path = f"/tmp/{job_id}_{file.filename}"
@@ -247,7 +242,7 @@ async def analyze_audio_background(
 
 
 @app.post("/api/v1/edge/route", summary="Edge Device Real-time Routing & Orchestration")
-async def process_edge_routing(request: EdgeRouteRequest):
+async def process_edge_routing(request: EdgeRouteRequest, _ = Depends(validate_ai_secret_token)):
     raw_text = request.text
     user_id = request.user_id 
     memory_context = request.memory_context
