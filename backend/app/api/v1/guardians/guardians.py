@@ -8,6 +8,7 @@ from typing import Optional
 from db.database import get_db
 from db.models import Dependent, GuardianDependentMapping, Guardian
 from api.v1.deps import get_current_user # 현재 로그인한 보호자 정보를 가져오는 함수
+from api.v1.websocket import device_ws_manager
 from core.response import unified_response
 
 class DependentSearchData(BaseModel):
@@ -70,9 +71,8 @@ def search_dependent(
 async def request_link_dependent(
     request: LinkRequest,
     db: Session = Depends(get_db),
-    current_user: Guardian = Depends(get_current_user) # 실제 인증 로직 적용
+    current_user: Guardian = Depends(get_current_user)
 ):
-
     # 1. 유효한 어르신인지 다시 한번 확인
     dependent = db.query(Dependent).filter(Dependent.id == request.dependent_id).first()
     if not dependent:
@@ -98,15 +98,34 @@ async def request_link_dependent(
     db.commit()
 
     # =================================================================
-    # TODO: 여기서 어르신의 기기(dependent.device_token)를 사용해 
-    # FCM(Firebase Cloud Messaging) 등으로 푸시 알림을 발송하는 로직 추가
+    #  웹소켓(WS)을 통해 어르신 기기로 페어링 팝업 요청 발송
     # =================================================================
+    payload = {
+        "action": "SHOW_PAIRING_POPUP",
+        "data": {
+            "mapping_id": new_mapping.id, # 어르신이 수락/거절 누를 때 보낼 매핑 식별키
+            "guardian_name": current_user.name, # 팝업에 띄워줄 보호자 이름 (예: "자녀 홍길동")
+            "message": f"{current_user.name} 님이 기기 연동을 요청했습니다. 수락하시겠습니까?"
+        }
+    }
+
+    # 웹소켓 전송 시도
+    is_sent = await device_ws_manager.send_personal_message(
+        message=payload, 
+        dependent_id=str(request.dependent_id)
+    )
+
+    if is_sent:
+        notification_status = "기기에 실시간 알림을 전송했습니다."
+    else:
+        notification_status = "기기가 오프라인 상태이므로, 기기가 켜지면 연동 대기 목록에 표시됩니다."
 
     return unified_response(
         status_code=201, 
-        message=f"{dependent.name} 어르신에게 연동 요청을 보냈습니다."
+        message=f"{dependent.name} 어르신에게 연동 요청을 보냈습니다. ({notification_status})"
     )
-
+    
+    
 # 3. 연동 요청을 삭제
 @router.delete("/cancel-link/{dependent_id}")
 def cancel_link_request(

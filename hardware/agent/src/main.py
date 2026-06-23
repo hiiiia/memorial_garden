@@ -41,6 +41,13 @@ BASE_DIR = "/app/data"
 BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
 
+active_frontend_ws = None
+
+# ==========================================
+# React가 클라우드로 보낼 메시지를 담아둘 우체통(Queue)
+# ==========================================
+cloud_outbound_queue = asyncio.Queue()
+
 # ==========================================
 # 부팅 시 자동 등록 및 인증 통합 함수
 # ==========================================
@@ -90,7 +97,46 @@ async def boot_and_authenticate():
         except Exception as e:
             print(f"❌ 서버 연결 에러: {e}")
             return False
-        
+
+
+# ==========================================
+# [수정] 클라우드 백엔드 웹소켓 클라이언트 (양방향 송수신)
+# ==========================================
+async def cloud_websocket_client():
+    cloud_ws_url = f"ws://{BACKEND_URL}/ws/device/{DEPENDENT_ID}" 
+    
+    while True:
+        try:
+            print(f"[클라우드 WS] 백엔드({cloud_ws_url})에 연결 시도 중...")
+            async with websockets.connect(cloud_ws_url) as cloud_ws:
+                print("✅ [클라우드 WS] 백엔드 웹소켓 연결 성공!")
+                
+                # 1. 수신 루프 (클라우드 ➔ React)
+                async def receive_from_cloud():
+                    global active_frontend_ws
+                    async for message in cloud_ws:
+                        data = json.loads(message)
+                        print(f"📥 [클라우드 ➔ HW]: {data}")
+                        if active_frontend_ws is not None:
+                            await active_frontend_ws.send(message) # React로 그대로 전달
+                
+                # 2. 송신 루프 (React ➔ 우체통 ➔ 클라우드)
+                async def send_to_cloud():
+                    while True:
+                        # 큐에 데이터가 들어올 때까지 대기하다가 들어오면 빼냄
+                        outbound_msg = await cloud_outbound_queue.get()
+                        await cloud_ws.send(json.dumps(outbound_msg))
+                        print(f"📤 [HW ➔ 클라우드] 전송 완료: {outbound_msg}")
+                        cloud_outbound_queue.task_done()
+
+                # 두 루프를 동시에 실행 (둘 중 하나라도 끊어지면 예외 발생하여 재연결 루프로 감)
+                await asyncio.gather(receive_from_cloud(), send_to_cloud())
+                        
+        except Exception as e:
+            print(f"❌ [클라우드 WS] 연결 끊김 또는 에러 발생: {e}. 5초 후 재연결...")
+            await asyncio.sleep(5)
+
+
 # ==========================================
 # [로컬] STT 및 오디오 분석 모듈
 # ==========================================
@@ -249,13 +295,17 @@ async def get_response_from_ai_server(session, raw_text: str, memory_context: st
 # 5. 메인 웹소켓 컨트롤러 (강화 버전)
 # ==========================================
 async def handle_client(websocket, path="/"):
-    print("[웹소켓] React 프론트엔드 연결 성공!")
+    global active_frontend_ws
+    active_frontend_ws = websocket
+    print("✅ [로컬 WS] React 프론트엔드 연결 성공!")
+    
     async with aiohttp.ClientSession() as session:
         try:
             async_tasks = set()
             async for message in websocket:
                 data = json.loads(message)
                 
+                # 1. 로컬 하드웨어 제어 명령
                 if data.get("command") == "force_record":
                     if not recorder.is_recording:
                         recorder.start_recording()
@@ -307,8 +357,26 @@ async def handle_client(websocket, path="/"):
                             finally:
                                 # 어떤 상황에서도 UI 상태는 idle로 복구
                                 await websocket.send(json.dumps({"status": "idle"}))
+
+                # 2. 프론트엔드가 클라우드(백엔드)로 보내려는 상태나 응답인 경우
+                elif data.get("target") == "cloud":
+                    print(f"[React ➔ HW] 클라우드 전송 요청 수신: {data}")
+                    # 수신한 데이터를 즉시 우체통(Queue)에 넣어서 send_to_cloud()가 가져가게 함
+                    await cloud_outbound_queue.put(data.get("payload"))
+                
+                # 3. 단순 프론트엔드 상태 변경 알림 (필요시 파이썬에서 사용)
+                else:
+                    print(f"[React 내부 상태 알림]: {data}")
+                
+        
+        
         except websockets.exceptions.ConnectionClosed:
             print("[웹소켓] 연결 해제")
+            
+        finally:
+            if active_frontend_ws == websocket:
+                active_frontend_ws = None
+        
     
 # ==========================================
 # 애플리케이션 시작점
@@ -321,17 +389,23 @@ async def main():
         print("⚠️ 기기 인증 실패. 시스템 대기 모드로 진입합니다.")
         return
     
-    # 1. 백그라운드 워커를 이벤트 루프에 미리 등록하여 실행
+    # 1. 백그라운드 오디오 워커 실행 (기존)
     worker_task = asyncio.create_task(background_audio_worker())
     
-    # 2. 웹소켓 서버 시작
+    # ==========================================================
+    # 2. 클라우드 백엔드 통신용 웹소켓 클라이언트 백그라운드 실행
+    # ==========================================================
+    cloud_ws_task = asyncio.create_task(cloud_websocket_client())
+    
+    # 3. 로컬 프론트엔드(React) 통신용 웹소켓 서버 시작 (기존)
     server = await websockets.serve(handle_client, "0.0.0.0", 8765)
     print("[Edge] 라즈베리 파이 엣지 서버 가동 시작 (포트: 8765)")
     
     await server.wait_closed()
     
-    # 워커 종료 처리 (서버가 닫힐 때)
+    # 종료 처리 (서버가 닫힐 때)
     worker_task.cancel()
+    cloud_ws_task.cancel()  # 클라우드 웹소켓 태스크도 함께 종료되도록 추가
 
 if __name__ == "__main__":
     asyncio.run(main())

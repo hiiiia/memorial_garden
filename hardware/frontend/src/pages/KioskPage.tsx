@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 // 팀원이 작성한 CSS 파일 경로에 맞게 수정해주세요. (예: import '../css/ElderPage.css';)
-import '../css/Kiosk.css'; 
+import '../css/Kiosk.css';
 
 type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'memory' | 'send' | 'finish' | 'detail' | 'help';
 type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
@@ -14,7 +14,7 @@ interface MemoryData {
 const KioskPage: React.FC = () => {
   // 1. 화면 전환 상태 (팀원 코드)
   const [screen, setScreen] = useState<Screen>('home');
-  
+
   // 2. 파이썬 에이전트 통신 상태 (기존 코드)
   const [agentState, setAgentState] = useState<AgentState>('idle');
   const [wsConnected, setWsConnected] = useState<boolean>(false);
@@ -22,17 +22,24 @@ const KioskPage: React.FC = () => {
 
   // 선택된 상세 추억 상태
   const [selectedMemory, setSelectedMemory] = useState<MemoryData | null>(null);
-  
+
   // 추억 보관함 페이징(슬라이드) 상태
   const [memoryPage, setMemoryPage] = useState(0);
 
   // 실제 데이터가 있다고 가정 (기존 데이터 배열로 교체하세요)
-  const allMemories: MemoryData[] = []; 
-  
+  const allMemories: MemoryData[] = [];
+
+  // 팝업 상태(연동 요청)
+  const [showPairingPopup, setShowPairingPopup] = useState<boolean>(false);
+  const [pairingData, setPairingData] = useState<{ guardianName: string; mappingId: number | null }>({
+    guardianName: '',
+    mappingId: null
+  });
+
   // 화면에 보여줄 메모리 개수 계산 (예: 한 번에 3개씩 렌더링)
   const itemsPerPage = 3;
   const visibleMemories = allMemories.slice(
-    memoryPage * itemsPerPage, 
+    memoryPage * itemsPerPage,
     (memoryPage + 1) * itemsPerPage
   );
 
@@ -49,7 +56,7 @@ const KioskPage: React.FC = () => {
 
   const wsRef = useRef<WebSocket | null>(null);
 
-// 🔌 웹소켓 연결 및 하드웨어 신호 수신 로직
+  // 🔌 웹소켓 연결 및 하드웨어 신호 수신 로직
   useEffect(() => {
     const connectWebSocket = () => {
       const ws = new WebSocket('ws://localhost:8765');
@@ -58,11 +65,20 @@ const KioskPage: React.FC = () => {
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        
+
+        // 보호자 연동 요청이 들어왔을 때 팝업 띄우기
+        if (data.action === 'SHOW_PAIRING_POPUP') {
+          setPairingData({
+            guardianName: data.data.guardian_name,
+            mappingId: data.data.mapping_id
+          });
+          setShowPairingPopup(true); // 팝업 열기
+        }
+
         if (data.status) {
           setAgentState(data.status);
-          
-          // 💡 수정됨: 함수형 업데이트를 사용하여 항상 최신 화면 상태(prev)를 확인합니다.
+
+          // 수정됨: 함수형 업데이트를 사용하여 항상 최신 화면 상태(prev)를 확인합니다.
           // 이렇게 하면 의존성 배열에 screen을 넣지 않아도 안전하게 비교할 수 있습니다.
           setScreen((prevScreen) => {
             if (data.status !== 'idle' && prevScreen !== 'ai') {
@@ -71,7 +87,7 @@ const KioskPage: React.FC = () => {
             return prevScreen; // 조건에 안 맞으면 기존 화면 유지
           });
         }
-        
+
         if (data.type === 'AI_RESPONSE' && data.text) {
           setAiText(data.text);
         }
@@ -86,19 +102,19 @@ const KioskPage: React.FC = () => {
     };
 
     connectWebSocket();
-    
+
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
     };
-  // 수정됨: screen을 빼고 빈 배열로 두어, 화면이 바뀌어도 웹소켓이 끊기지 않게 합니다.
+    // 수정됨: screen을 빼고 빈 배열로 두어, 화면이 바뀌어도 웹소켓이 끊기지 않게 합니다.
   }, []);
 
-// 🎤 '말하기' 버튼 클릭 시 실행되는 함수
+  // 🎤 '말하기' 버튼 클릭 시 실행되는 함수
   const handleStartTalk = () => {
     setScreen('ai'); // AI 화면으로 넘기기
-    
+
     // 수정됨: wsConnected 대신 실제 웹소켓의 연결 상태(readyState)를 확인합니다.
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // 파이썬 쪽으로 강제 녹음 시작 명령 전송
@@ -107,6 +123,28 @@ const KioskPage: React.FC = () => {
       console.warn("⏳ 웹소켓 연결을 기다리는 중입니다. 잠시 후 다시 눌러주세요.");
     }
   };
+
+  const handleAcceptPairing = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        target: 'cloud', // 파이썬 에이전트에게 이건 클라우드로 보내라고 지시
+        payload: {
+          action: 'PAIRING_ACCEPTED',
+          mapping_id: pairingData.mappingId
+        }
+      }));
+      setShowPairingPopup(false); // 팝업 닫기
+      alert(`${pairingData.guardianName} 님과 기기가 연결되었습니다!`); // 어르신을 위한 완료 안내
+    }
+  };
+
+  //  연동 거절 버튼 클릭 핸들러
+  const handleRejectPairing = () => {
+    setShowPairingPopup(false);
+  };
+
+
+
 
   // ⏳ 현재 에이전트 상태에 따른 하단 안내 문구 변환
   const getStatusText = () => {
@@ -189,13 +227,13 @@ const KioskPage: React.FC = () => {
           </div>
 
           {/* 에이전트 상태에 따라 음성 파동 애니메이션 불투명도 조절 */}
-          <div 
-            className="voice-wave" 
+          <div
+            className="voice-wave"
             style={{ opacity: agentState === 'listening' || agentState === 'speaking' ? 1 : 0.2 }}
           >
             ▂▃▅▆▇▆▅▃▂▃▅▆▇▆▅
           </div>
-          
+
           {/* 상태에 맞는 동적 텍스트 출력 */}
           <p className="listening-text">{getStatusText()}</p>
 
@@ -207,7 +245,7 @@ const KioskPage: React.FC = () => {
           </button>
         </div>
       )}
-            {screen === 'diary' && (
+      {screen === 'diary' && (
         <div className="home-card diary-card">
           <h1 className="diary-title">오늘의 일기</h1>
 
@@ -350,7 +388,7 @@ const KioskPage: React.FC = () => {
               <p className="detail-date">{selectedMemory?.date}</p>
 
               <p className="detail-desc">
-                {selectedMemory?.desc.map((line : string, index: number) => (
+                {selectedMemory?.desc.map((line: string, index: number) => (
                   <React.Fragment key={index}>
                     {line}
                     <br />
@@ -410,6 +448,36 @@ const KioskPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 가족 연동 요청 팝업 (어떤 화면에 있든 최상단에 표시(Modal)) */}
+      {showPairingPopup && (
+        <div className="pairing-popup-overlay">
+          <div className="pairing-popup-modal">
+            <h1 className="pairing-popup-title">👨‍👩‍👧 가족 연동 요청</h1>
+            <p className="pairing-popup-text">
+              <strong>{pairingData.guardianName}</strong> 님이<br />
+              기기 연동을 요청하셨습니다.<br />
+              연결을 수락하시겠습니까?
+            </p>
+            <div className="pairing-popup-buttons">
+              <button 
+                onClick={handleAcceptPairing}
+                className="pairing-popup-btn accept"
+              >
+                ⭕ 수락하기
+              </button>
+              <button 
+                onClick={handleRejectPairing}
+                className="pairing-popup-btn reject"
+              >
+                ❌ 아니요
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      
     </div>
   );
 };
