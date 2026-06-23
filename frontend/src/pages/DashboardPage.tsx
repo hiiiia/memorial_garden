@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 
 // 전역 타입 파일에서 인터페이스 불러오기 (경로가 다를 경우 수정 필요)
-import { DashboardData, DiaryData, AnalysisData } from '../types/interface';
+import { DashboardData, DiaryData, AnalysisData, MonthlyDiaryData } from '../types/interface';
 
 import 'react-calendar/dist/Calendar.css';
 import '../css/CustomCalendar.css';
@@ -23,6 +23,8 @@ const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState<'diary' | 'report'>('diary');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [markedDates, setMarkedDates] = useState<string[]>([]); // 일기가 존재하는 날짜 리스트 (예: ["2026-06-03", "2026-06-05"])
+  const [riskScoresByDate, setRiskScoresByDate] = useState<Record<string, number>>({});
+  const [showNoDiaryPopup, setShowNoDiaryPopup] = useState<boolean>(false);
 
   // 하단 위젯 데이터 상태 관리 (Mock 대체)
   const [selectedDiary, setSelectedDiary] = useState<DiaryData | null>(null);
@@ -36,6 +38,62 @@ const DashboardPage = () => {
     const offset = date.getTimezoneOffset() * 60000;
     return new Date(date.getTime() - offset).toISOString().split('T')[0];
   };
+
+  const getRecentDateStrings = (days: number) => {
+  const dates: string[] = [];
+
+  for (let i = 0; i < days; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    dates.push(formatYYYYMMDD(date));
+  }
+
+  return dates;
+};
+
+const checkNoDiaryForThreeDays = async () => {
+  try {
+    const token = localStorage.getItem('access_token');
+    const dependentId = localStorage.getItem('dependent_id');
+
+    if (!token || !dependentId) return;
+
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const yearMonth = `${year}-${month}`;
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/dashboard/diary/monthly?user_id=${dependentId}&month=${yearMonth}`,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    if (!response.ok) return;
+
+    const result = await response.json();
+
+    let diaryDates: string[] = [];
+
+    if (result.code === 200 && result.data?.diary_list) {
+      diaryDates = result.data.diary_list.map((diary: any) => diary.date);
+    }
+
+    const recentThreeDays = getRecentDateStrings(3);
+
+    const hasRecentDiary = recentThreeDays.some((date) =>
+      diaryDates.includes(date)
+    );
+
+    if (!hasRecentDiary) {
+      setShowNoDiaryPopup(true);
+    }
+  } catch (error) {
+    console.error('No diary alert check error:', error);
+  }
+};
 
   // 월별 일기 존재 여부 조회 함수 (실제 API 연동)
   const fetchMonthlyRecords = async (date: Date) => {
@@ -77,20 +135,30 @@ const DashboardPage = () => {
       if (response.ok && result.code === 200) {
         if (result.data && result.data.diary_list) {
           // 새로운 백엔드 포맷: diary_list 배열 안의 객체들에서 date 값만 쏙쏙 뽑아냄
-          const datesOnly = result.data.diary_list.map((diary: any) => diary.date);
+          const diaryList = result.data.diary_list as MonthlyDiaryData[];
+          const datesOnly = diaryList.map((diary) => diary.date);
+          const riskScores = diaryList.reduce<Record<string, number>>((scores, diary) => {
+            scores[diary.date] = Math.max(scores[diary.date] ?? 0, diary.riskScore ?? 0);
+            return scores;
+          }, {});
           setMarkedDates(datesOnly);
+          setRiskScoresByDate(riskScores);
         } else if (Array.isArray(result.data)) {
           // 혹시라도 예전 API가 응답할 경우를 대비한 방어 코드
           setMarkedDates(result.data);
+          setRiskScoresByDate({});
         } else {
           setMarkedDates([]);
+          setRiskScoresByDate({});
         }
       } else {
         setMarkedDates([]);
+        setRiskScoresByDate({});
       }
     } catch (err) {
       console.error("Monthly records fetch error:", err);
       setMarkedDates([]);
+      setRiskScoresByDate({});
     }
   };
 
@@ -223,6 +291,12 @@ const DashboardPage = () => {
     }
   }, []);
 
+  useEffect(() => {
+  if (dashData) {
+    checkNoDiaryForThreeDays();
+  }
+}, [dashData]);
+
   // 4. 연동 취소 함수
   const handleCancelRequest = async () => {
     try {
@@ -263,6 +337,70 @@ const DashboardPage = () => {
   };
 
   const getConditionIcon = (state: string) => state === 'good' ? '🙂' : state === 'bad' ? '😥' : '😐';
+
+  const getRiskInfo = (score: number) => {
+  if (score >= 70) {
+    return {
+      level: '위험',
+      title: '보호자 확인 필요',
+      color: '#EF3E3E',
+      bgColor: '#FFF4F4',
+      borderColor: '#EF3E3E',
+      actionBg: '#FFF1F1',
+      actions: [
+        {
+          icon: '📞',
+          title: '즉시 연락 권장',
+          desc: '즉시 연락하여 상태를 확인해주세요. 연락이 닿지 않을 경우 다음 조치를 진행해주세요.',
+        },
+        {
+          icon: '👥',
+          title: '가족·지인에게 확인 요청',
+          desc: '연락이 닿지 않을 시 가까운 가족 또는 지인에게 확인을 요청해주세요.',
+        },
+        {
+          icon: '🏠',
+          title: '필요한 경우 방문 확인',
+          desc: '상태가 심각하거나 지속될 경우 직접 방문하여 확인하는 것이 좋습니다.',
+        },
+      ],
+    };
+  }
+
+  if (score >= 40) {
+    return {
+      level: '주의',
+      title: '안부 확인 권장',
+      color: '#F57C00',
+      bgColor: '#FFF8EE',
+      borderColor: '#F57C00',
+      actionBg: '#FFF5E8',
+      actions: [
+        {
+          icon: '📞',
+          title: '근 시일 내에 안부 확인',
+          desc: '근 시일 내에 전화 또는 방문으로 안부를 확인해주세요.',
+        },
+      ],
+    };
+  }
+
+  return {
+    level: '양호',
+    title: '평소처럼 관심 유지',
+    color: '#388E3C',
+    bgColor: '#F5FBF5',
+    borderColor: '#388E3C',
+    actionBg: '#F3FAF3',
+    actions: [
+      {
+        icon: '📞',
+        title: '평소처럼 관심 유지',
+        desc: '현재는 큰 위험 신호가 낮은 편입니다. 평소처럼 관심을 유지해주세요.',
+      },
+    ],
+  };
+};
 
   if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>대시보드를 준비 중입니다...</div>;
   if (error) return <div style={{ padding: '50px', textAlign: 'center', color: 'red' }}>오류 발생: {error}</div>;
@@ -308,9 +446,35 @@ const DashboardPage = () => {
     );
   }
 
+  const riskInfo = getRiskInfo(dashData.risk_assessment.score);
+
   // 3. 연동이 완료된 정상 대시보드 화면 (Linked State)
   return (
     <div className="dashboard-container" style={{ paddingBottom: '80px' }}>
+    {showNoDiaryPopup && (
+  <div className="no-diary-popup-overlay">
+    <div className="no-diary-popup">
+      <div className="no-diary-icon">🔔</div>
+
+      <h2 className="no-diary-title">
+        최근 3일 이상 대화 기록이 없습니다.
+      </h2>
+
+      <p className="no-diary-message">
+        어르신과의 최근 대화 기록이 확인되지 않았습니다.
+        <br />
+        안부 확인을 권장합니다.
+      </p>
+
+      <button
+        className="no-diary-close-btn"
+        onClick={() => setShowNoDiaryPopup(false)}
+      >
+        확인
+      </button>
+    </div>
+  </div>
+)}
       <div className="dashboard-content">
 
         {/* 헤더 영역 */}
@@ -346,16 +510,66 @@ const DashboardPage = () => {
             </div>
             <p className="card-subtext">{dashData.today_condition.description}</p>
           </div>
-          <div className="dashboard-card interactive" onClick={() => navigate('/analysis')}>
-            <h3 className="card-title">위험도 <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#888' }}>(자세히 보기 ↗)</span></h3>
-            <h2 className="score-text" style={{ color: dashData.today_condition.color_code }}>{dashData.risk_assessment.score}점</h2>
-            <p className="score-label">{dashData.risk_assessment.level}</p>
-            <p className="card-subtext">{dashData.risk_assessment.status_text}</p>
-          </div>
+          <div
+  className="dashboard-card interactive risk-card"
+  onClick={() => navigate('/analysis')}
+  style={{
+    borderTop: `4px solid ${riskInfo.borderColor}`,
+  }}
+>
+  <h3 className="card-title">
+    위험도{' '}
+    <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#888' }}>
+      (자세히 보기 ↗)
+    </span>
+  </h3>
+
+  <div className="risk-main-row">
+    <h2 className="risk-score" style={{ color: riskInfo.color }}>
+      {dashData.risk_assessment.score}점
+    </h2>
+
+    <div className="risk-level-box">
+      <span className="risk-level-badge" style={{ backgroundColor: riskInfo.color }}>
+        {riskInfo.level}
+      </span>
+      <p className="risk-level-title" style={{ color: riskInfo.color }}>
+        {riskInfo.title}
+      </p>
+    </div>
+  </div>
+
+  <div
+    className="risk-action-box"
+    style={{
+      backgroundColor: riskInfo.actionBg,
+      border: `1px solid ${riskInfo.borderColor}22`,
+    }}
+  >
+    {riskInfo.actions.map((item, index) => (
+      <div
+        key={index}
+        className={`risk-action-item ${index !== riskInfo.actions.length - 1 ? 'has-line' : ''}`}
+      >
+        <span className="risk-action-icon" style={{ color: riskInfo.color }}>
+          {item.icon}
+        </span>
+
+        <div>
+          <p className="risk-action-title">{item.title}</p>
+          <p className="risk-action-desc">{item.desc}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
           <div className="dashboard-card interactive" onClick={() => navigate('/diary')}>
             <h3 className="card-title">마지막 대화 <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#888' }}>(오늘 일기 ↗)</span></h3>
             <div className="time-text">{dashData.last_interaction.time_label}</div>
             <p className="card-subtext">{dashData.last_interaction.duration_label}</p>
+            <p className="card-subtext last-interaction-summary" title={dashData.last_interaction.summary}>
+              {dashData.last_interaction.summary}
+            </p>
           </div>
         </div>
 
@@ -380,10 +594,13 @@ const DashboardPage = () => {
 
             // 타일의 날짜가 백엔드(혹은 Mock)에서 받아온 '기록 있는 날 리스트'에 포함되면 점(Dot)을 찍음
             tileContent={({ date, view }) => {
-              if (view === 'month' && markedDates.includes(formatYYYYMMDD(date))) {
+              const dateString = formatYYYYMMDD(date);
+              if (view === 'month' && markedDates.includes(dateString)) {
+                const riskScore = riskScoresByDate[dateString] ?? 0;
+                const dotColor = riskScore >= 70 ? '#D32F2F' : riskScore >= 40 ? '#FFB74D' : '#7A8B5F';
                 return (
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2px' }}>
-                    <div style={{ width: '6px', height: '6px', backgroundColor: '#7A8B5F', borderRadius: '50%' }} />
+                    <div style={{ width: '6px', height: '6px', backgroundColor: dotColor, borderRadius: '50%' }} />
                   </div>
                 );
               }
@@ -420,7 +637,7 @@ const DashboardPage = () => {
               {activeTab === 'diary' && selectedDiary && (
                 <div className="diary-card interactive" onClick={() => navigate(`/diary?date=${selectedDateStr}`)}>
                   {/* 회색 대체 이미지 */}
-                  <img src={selectedDiary.image_url} alt="AI 그림일기" className="diary-img" onError={(e) => { e.currentTarget.src = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"%3E%3Crect fill="%23e2e8f0" width="400" height="300"/%3E%3Ctext fill="%23475569" font-family="sans-serif" font-size="20" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage Not Found%3C/text%3E%3C/svg%3E'; }} />
+                  <img src={selectedDiary.image_url} alt="AI 그림일기" className="diary-img" onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/400x300?text=Image+Not+Found'; }} />
                   <div className="diary-content-box">
                     <p className="diary-text">{selectedDiary.summary}</p>
                     <div className="keyword-container">

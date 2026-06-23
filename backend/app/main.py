@@ -89,6 +89,7 @@ app.add_middleware(
 # app.mount("/static/audio", StaticFiles(directory=AUDIO_SAVE_DIR), name="static_audio")
 
 # 이미지용 마운트
+os.makedirs("/app/uploads/diary_images", exist_ok=True)
 app.mount("/static/diary_images", StaticFiles(directory="/app/uploads/diary_images"), name="diary_images")
 
 

@@ -31,6 +31,7 @@ export interface RiskAssessment {
 export interface LastInteraction {
   time_label: string;     // '오늘 오전 09:12' 등
   duration_label: string; // 'AI와 대화 완료' 등
+  summary: string;
 }
 
 export interface RecentAlert {
@@ -52,6 +53,15 @@ export interface HealthData {
     depressionScore: number; 
     dementiaScore: number; 
     insight: string; 
+}
+
+export interface MonthlyDiaryData {
+  id: string;
+  date: string;
+  imageUrl: string;
+  content: string;
+  keywords: string[];
+  riskScore: number;
 }
 
 

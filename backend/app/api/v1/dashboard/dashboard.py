@@ -71,6 +71,11 @@ def get_guardian_dashboard(
         func.date(Log.created_at) == target_date
     ).order_by(Log.created_at.desc()).first()
 
+    last_completed_log = latest_log or db.query(Log).filter(
+        Log.dependent_id == user_id,
+        Log.status == "COMPLETED"
+    ).order_by(Log.created_at.desc()).first()
+
     # 4. 프론트엔드 포맷 초기화 (기본값 설정)
     state = "good"
     label = "안정"
@@ -81,6 +86,7 @@ def get_guardian_dashboard(
     status_text = "안정적인 상태입니다."
     time_label = "대화 기록 없음"
     duration_label = "라즈베리파이 연결 상태를 확인하세요."
+    interaction_summary = "대화 기록 없음"
 
     if latest_log:
         risk_score = int((latest_log.risk_score or 0) * 100) if latest_log.risk_score <= 1.0 else int(latest_log.risk_score)
@@ -101,9 +107,15 @@ def get_guardian_dashboard(
             if latest_log.llm_summary:
                 description = latest_log.llm_summary
 
-        formatted_time = latest_log.created_at.strftime('%p %I:%M')
-        time_label = f"오늘 {formatted_time.replace('AM', '오전').replace('PM', '오후')}"
+    if last_completed_log:
+        formatted_time = last_completed_log.created_at.strftime('%p %I:%M')
+        localized_time = formatted_time.replace('AM', '오전').replace('PM', '오후')
+        if last_completed_log.created_at.date() == dt_date.today():
+            time_label = f"오늘 {localized_time}"
+        else:
+            time_label = f"{last_completed_log.created_at.strftime('%Y-%m-%d')} {localized_time}"
         duration_label = "AI와 대화 완료"
+        interaction_summary = last_completed_log.llm_summary or "대화 요약이 없습니다."
 
     # 5. Alert 테이블에서 최근 알림 데이터 3개 조회
     db_alerts = db.query(Alert).filter(
@@ -163,7 +175,8 @@ def get_guardian_dashboard(
         },
         "last_interaction": {
             "time_label": time_label,
-            "duration_label": duration_label
+            "duration_label": duration_label,
+            "summary": interaction_summary
         },
         "recent_alerts": recent_alerts
     }
@@ -291,7 +304,21 @@ def get_risk_analysis(
         })
 
     # 종합 평균 기반 규칙 주치의 소견 생성
-    avg_score = sum(date_map.values()) / 7 if sum(date_map.values()) > 0 else 0
+    # 일기가 없는 날은 평균 계산에서 제외
+    valid_scores = []
+
+    for log in logs:
+        if log.diary_text and log.diary_text.strip():
+            raw_score = log.risk_score or 0.0
+            score = int(raw_score * 100) if raw_score <= 1.0 else int(raw_score)
+            valid_scores.append(score)
+
+    avg_score = (
+        sum(valid_scores) / len(valid_scores)
+        if valid_scores
+        else 0
+    )
+
     if avg_score >= 60:
         insight = "최근 일주일간 마음 불안정 및 인지 기복 수치가 다소 높게 관찰됩니다. 오늘 저녁에는 따뜻한 안부 전화를 드려 심리적 안정감을 높여주시는 것을 권장합니다."
     elif avg_score >= 30:
@@ -365,13 +392,17 @@ def get_monthly_diary_payload(
         else:
             kw_list = ["일상", log.primary_emotion or "안정"]
 
+        raw_risk = log.risk_score or 0.0
+        risk_score = int(raw_risk * 100) if raw_risk <= 1.0 else int(raw_risk)
+
         # 📖 1. 일기 탭 데이터 적재
         diary_list.append({
             "id": log.id,
             "date": log_date_str,
             "imageUrl": log.image_url or "https://via.placeholder.com/800x400?text=No+Image",
             "content": log.diary_text or log.llm_summary or "기록된 일기가 없습니다.",
-            "keywords": kw_list
+            "keywords": kw_list,
+            "riskScore": risk_score
         })
 
         # 🩺 2. 건강 보고서 탭 데이터 적재 (Float 점수 -> 0~100 정수 스케일링 적용)
