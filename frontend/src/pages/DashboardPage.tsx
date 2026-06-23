@@ -338,69 +338,66 @@ const checkNoDiaryForThreeDays = async () => {
 
   const getConditionIcon = (state: string) => state === 'good' ? '🙂' : state === 'bad' ? '😥' : '😐';
 
-  const getRiskInfo = (score: number) => {
-  if (score >= 70) {
-    return {
-      level: '위험',
-      title: '보호자 확인 필요',
-      color: '#EF3E3E',
-      bgColor: '#FFF4F4',
-      borderColor: '#EF3E3E',
-      actionBg: '#FFF1F1',
-      actions: [
-        {
-          icon: '📞',
-          title: '즉시 연락 권장',
-          desc: '즉시 연락하여 상태를 확인해주세요. 연락이 닿지 않을 경우 다음 조치를 진행해주세요.',
-        },
-        {
-          icon: '👥',
-          title: '가족·지인에게 확인 요청',
-          desc: '연락이 닿지 않을 시 가까운 가족 또는 지인에게 확인을 요청해주세요.',
-        },
-        {
-          icon: '🏠',
-          title: '필요한 경우 방문 확인',
-          desc: '상태가 심각하거나 지속될 경우 직접 방문하여 확인하는 것이 좋습니다.',
-        },
-      ],
-    };
-  }
+    const getRiskInfo = (score: number) => {
+      if (score >= 70) {
+        return {
+          level: '위험',
+          title: '보호자 확인 필요',
+          color: '#EF3E3E',
+          borderColor: '#EF3E3E',
+          actionBg: '#FFF1F1',
+          actions: [
+            {
+              icon: '📞',
+              title: '즉시 연락 권장',
+              desc: '즉시 연락하여 상태를 확인해주세요. 연락이 닿지 않을 경우 다음 조치를 진행해주세요.',
+            },
+            {
+              icon: '👥',
+              title: '가족·지인에게 확인 요청',
+              desc: '연락이 닿지 않을 시 가까운 가족 또는 지인에게 확인을 요청해주세요.',
+            },
+            {
+              icon: '🏠',
+              title: '필요한 경우 방문 확인',
+              desc: '상태가 심각하거나 지속될 경우 직접 방문하여 확인하는 것이 좋습니다.',
+            },
+          ],
+        };
+      }
 
-  if (score >= 40) {
-    return {
-      level: '주의',
-      title: '안부 확인 권장',
-      color: '#F57C00',
-      bgColor: '#FFF8EE',
-      borderColor: '#F57C00',
-      actionBg: '#FFF5E8',
-      actions: [
-        {
-          icon: '📞',
-          title: '근 시일 내에 안부 확인',
-          desc: '근 시일 내에 전화 또는 방문으로 안부를 확인해주세요.',
-        },
-      ],
-    };
-  }
+      if (score >= 40) {
+        return {
+          level: '주의',
+          title: '안부 확인 권장',
+          color: '#F57C00',
+          borderColor: '#F57C00',
+          actionBg: '#FFF5E8',
+          actions: [
+            {
+              icon: '📞',
+              title: '근 시일 내에 안부 확인',
+              desc: '근 시일 내에 전화 또는 방문으로 안부를 확인해주세요.',
+            },
+          ],
+        };
+      }
 
-  return {
-    level: '양호',
-    title: '평소처럼 관심 유지',
-    color: '#388E3C',
-    bgColor: '#F5FBF5',
-    borderColor: '#388E3C',
-    actionBg: '#F3FAF3',
-    actions: [
-      {
-        icon: '📞',
+      return {
+        level: '양호',
         title: '평소처럼 관심 유지',
-        desc: '현재는 큰 위험 신호가 낮은 편입니다. 평소처럼 관심을 유지해주세요.',
-      },
-    ],
-  };
-};
+        color: '#388E3C',
+        borderColor: '#388E3C',
+        actionBg: '#F3FAF3',
+        actions: [
+          {
+            icon: '📞',
+            title: '평소처럼 관심 유지',
+            desc: '현재는 큰 위험 신호가 낮은 편입니다. 평소처럼 관심을 유지해주세요.',
+          },
+        ],
+      };
+    };
 
   if (isLoading) return <div style={{ padding: '50px', textAlign: 'center', color: '#888' }}>대시보드를 준비 중입니다...</div>;
   if (error) return <div style={{ padding: '50px', textAlign: 'center', color: 'red' }}>오류 발생: {error}</div>;
@@ -446,7 +443,8 @@ const checkNoDiaryForThreeDays = async () => {
     );
   }
 
-  const riskInfo = getRiskInfo(dashData.risk_assessment.score);
+  const riskScore = Number(dashData.risk_assessment.score);
+  const riskInfo = getRiskInfo(riskScore);
 
   // 3. 연동이 완료된 정상 대시보드 화면 (Linked State)
   return (
@@ -526,7 +524,7 @@ const checkNoDiaryForThreeDays = async () => {
 
   <div className="risk-main-row">
     <h2 className="risk-score" style={{ color: riskInfo.color }}>
-      {dashData.risk_assessment.score}점
+      {riskScore}점
     </h2>
 
     <div className="risk-level-box">
@@ -567,9 +565,14 @@ const checkNoDiaryForThreeDays = async () => {
             <h3 className="card-title">마지막 대화 <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#888' }}>(오늘 일기 ↗)</span></h3>
             <div className="time-text">{dashData.last_interaction.time_label}</div>
             <p className="card-subtext">{dashData.last_interaction.duration_label}</p>
-            <p className="card-subtext last-interaction-summary" title={dashData.last_interaction.summary}>
-              {dashData.last_interaction.summary}
-            </p>
+            {dashData.last_interaction.summary && (
+  <p
+    className="card-subtext last-interaction-summary"
+    title={dashData.last_interaction.summary}
+  >
+    {dashData.last_interaction.summary}
+  </p>
+)}
           </div>
         </div>
 

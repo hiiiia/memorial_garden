@@ -31,7 +31,7 @@ export interface RiskAssessment {
 export interface LastInteraction {
   time_label: string;     // '오늘 오전 09:12' 등
   duration_label: string; // 'AI와 대화 완료' 등
-  summary: string;
+  summary?: string;       // 금일 대화 요약. API에서 없을 수도 있어서 선택값 처리
 }
 
 export interface RecentAlert {
