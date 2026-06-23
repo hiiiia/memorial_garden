@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from db.database import get_db
 from db.models import GuardianDependentMapping, Dependent
 
-from api.v1.deps import get_current_dependent 
+#from api.v1.deps import get_current_dependent 
 from api.v1.utils.security import get_password_hash
 from api.v1.utils.jwt import create_access_token
 from core.response import unified_response

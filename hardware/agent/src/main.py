@@ -106,10 +106,16 @@ async def cloud_websocket_client():
     ws_base = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://")
     cloud_ws_url = f"{ws_base}/ws/device/{DEPENDENT_ID}"
     
+    global DEVICE_TOKEN
+    
+    headers = {
+        "Authorization": f"Bearer {DEVICE_TOKEN}"
+    }
+    
     while True:
         try:
             print(f"[클라우드 WS] 백엔드({cloud_ws_url})에 연결 시도 중...")
-            async with websockets.connect(cloud_ws_url) as cloud_ws:
+            async with websockets.connect(cloud_ws_url, extra_headers=headers) as cloud_ws:
                 print("✅ [클라우드 WS] 백엔드 웹소켓 연결 성공!")
                 
                 # 1. 수신 루프 (클라우드 ➔ React)

@@ -33,31 +33,30 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-# --- 어르신(장치)용 API Key 인증 체계 ---
-# auto_error=False로 설정해야 헤더가 없을 때 자체 커스텀 401 에러를 띄울 수 있습니다.
 security_bearer = HTTPBearer(auto_error=False)
 
-def get_current_dependent(
-    credentials: HTTPAuthorizationCredentials = Depends(security_bearer),
-    x_dependent_id: str = Header(..., description="라즈베리파이에 할당된 어르신 고유 ID"), # 장치가 자신이 누구인지 알려주는 헤더
-    db: Session = Depends(get_db)
-):
+# --- 어르신 기기 jwt 인증 ---
+def verify_hw_jwt_token(token: str) -> str:
     """
-    공통 API_SECRET_TOKEN을 검증하고, 헤더의 ID를 통해 어르신(Dependent) 객체를 반환합니다.
+    JWT를 검증하고, 성공 시 dependent_id(sub)를 반환합니다.
+    실패 시 Exception을 발생시킵니다.
     """
-    # 1. 장치 공통 시크릿 키 검증
-    if credentials.credentials != settings.API_SECRET_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized. Invalid or missing token."
+    try:
+        # 1. JWT 디코딩 및 검증
+        payload = jwt.decode(
+            token, 
+            settings.SECRET_KEY, 
+            algorithms=[settings.ALGORITHM]
         )
         
-    # 2. X-Dependent-Id 헤더를 통해 특정 어르신 식별
-    dependent = db.query(Dependent).filter(Dependent.id == x_dependent_id).first()
-    if dependent is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="어르신 정보를 찾을 수 없습니다. 헤더의 ID를 확인하세요."
-        )
-        
-    return dependent
+        # 2. 'sub' 확인
+        dependent_id = payload.get("sub")
+        if not dependent_id:
+            raise ValueError("Token payload missing sub")
+            
+        return dependent_id
+
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Token expired")
+    except jwt.InvalidTokenError:
+        raise ValueError("Invalid token")

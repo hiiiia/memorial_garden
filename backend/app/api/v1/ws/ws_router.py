@@ -1,18 +1,42 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, status
 import json
 from db.database import SessionLocal 
 from db.models import GuardianDependentMapping
 from api.v1.ws.websocket_manager import device_ws_manager
-
+from api.v1.deps import verify_hw_jwt_token
 ws_router = APIRouter()
 
-@ws_router.websocket("/ws/device/{dependent_id}")
+@ws_router.websocket("/device/{dependent_id}")
 async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
-    # 1. 기기 연결 수락 및 매니저 등록
+    
+    # 1. 헤더에서 토큰 추출
+    auth_header = websocket.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    token = auth_header.split(" ")[1]
+
+    # 2. [분리된 로직 호출] JWT 검증
+    try:
+        validated_id = verify_hw_jwt_token(token)
+    except ValueError as e:
+        print(f"🚫 [WS] 인증 실패: {e}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # 3. URL의 ID와 토큰의 ID가 일치하는지 보안 체크
+    if validated_id != dependent_id:
+        print(f"🚫 [WS] ID 불일치: 토큰({validated_id}) vs URL({dependent_id})")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    
+    
+    # 기기 연결 수락 및 매니저 등록
     await device_ws_manager.connect(dependent_id, websocket)
     
     # ==============================================================
-    # 🆕 [추가] 기기가 막 연결되었을 때, 혹시 밀린 연동 요청(PENDING)이 있는지 검사
+    # 기기가 막 연결되었을 때, 혹시 밀린 연동 요청(PENDING)이 있는지 검사
     # ==============================================================
     db = SessionLocal()
     try:

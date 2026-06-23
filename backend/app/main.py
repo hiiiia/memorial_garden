@@ -73,7 +73,8 @@ async def db_operational_error_handler(request: Request, exc: OperationalError):
 # CORS 미들웨어 설정 (반드시 app.include_router 보다 위에 작성)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS, # 리스트 형태로 깔끔하게 주입
+    #allow_origins=settings.ALLOWED_ORIGINS, # 리스트 형태로 깔끔하게 주입
+    allow_origins=["*"], # 전체 허용
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

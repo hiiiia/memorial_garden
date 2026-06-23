@@ -9,6 +9,7 @@ from api.v1.dashboard import dashboard
 from api.v1.guardians import guardians
 from api.v1.dependents import dependents
 from api.v1.memory import rag
+from api.v1.ws import ws_router
 
 # v1 전용 통합 라우터 생성
 api_router = APIRouter()
@@ -34,5 +35,7 @@ api_router.include_router(guardians.router, prefix="/guardian", tags=["Guardian"
 
 api_router.include_router(dependents.router, prefix="/dependent", tags=["dependent"])
 
+api_router.include_router(ws_router.ws_router, prefix="/ws", tags=["websocket"])
+
 # RAG 라우터
-api_router.include_router(rag.router, prefix="/memory", tags=["Memory"])
+#api_router.include_router(rag.router, prefix="/memory", tags=["Memory"])
