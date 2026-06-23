@@ -291,7 +291,21 @@ def get_risk_analysis(
         })
 
     # 종합 평균 기반 규칙 주치의 소견 생성
-    avg_score = sum(date_map.values()) / 7 if sum(date_map.values()) > 0 else 0
+    # 일기가 없는 날은 평균 계산에서 제외
+    valid_scores = []
+
+    for log in logs:
+        if log.diary_text and log.diary_text.strip():
+            raw_score = log.risk_score or 0.0
+            score = int(raw_score * 100) if raw_score <= 1.0 else int(raw_score)
+            valid_scores.append(score)
+
+    avg_score = (
+        sum(valid_scores) / len(valid_scores)
+        if valid_scores
+        else 0
+    )
+
     if avg_score >= 60:
         insight = "최근 일주일간 마음 불안정 및 인지 기복 수치가 다소 높게 관찰됩니다. 오늘 저녁에는 따뜻한 안부 전화를 드려 심리적 안정감을 높여주시는 것을 권장합니다."
     elif avg_score >= 30:

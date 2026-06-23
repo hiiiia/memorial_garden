@@ -210,3 +210,175 @@
   background-color: #FAFAFA;
   border-color: #CCC;
 }
+
+.risk-card {
+  min-height: 320px;
+}
+
+.risk-main-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.risk-score {
+  font-size: 42px;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1;
+}
+
+.risk-level-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.risk-level-badge {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  padding: 8px 22px;
+  border-radius: 999px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.risk-level-title {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.risk-action-box {
+  border-radius: 14px;
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+
+  min-height: 160px;
+}
+
+.risk-action-item {
+  display: flex;
+  gap: 14px;
+  padding: 14px 0;
+}
+
+.risk-action-item:first-child {
+  padding-top: 0;
+}
+
+.risk-action-item:last-child {
+  padding-bottom: 0;
+}
+
+.risk-action-item.has-line {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.risk-action-icon {
+  font-size: 22px;
+  width: 28px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.risk-action-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #222;
+  margin: 0 0 7px 0;
+}
+
+.risk-action-desc {
+  font-size: 17px;
+  line-height: 1.7;
+  color: #444;
+  margin: 0;
+}
+
+.no-diary-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.42);
+  z-index: 9999;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.no-diary-popup {
+  width: 420px;
+  background-color: #fff;
+  border-radius: 18px;
+  padding: 36px 32px 30px;
+  text-align: center;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.no-diary-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+
+  border-radius: 50%;
+  background-color: #fff3e0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 34px;
+}
+
+.no-diary-title {
+  font-size: 21px;
+  font-weight: 800;
+  color: #222;
+  margin: 0 0 12px;
+}
+
+.no-diary-message {
+  font-size: 15px;
+  line-height: 1.7;
+  color: #666;
+  margin: 0 0 26px;
+}
+
+.no-diary-close-btn {
+  width: 100%;
+  height: 46px;
+
+  border: none;
+  border-radius: 10px;
+
+  background-color: #7a8b5f;
+  color: white;
+
+  font-size: 15px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+.no-diary-close-btn:hover {
+  background-color: #68784f;
+}
+
+.last-interaction-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.5;
+  word-break: keep-all;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
