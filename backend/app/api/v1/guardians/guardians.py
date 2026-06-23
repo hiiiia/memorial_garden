@@ -105,7 +105,7 @@ async def request_link_dependent(
         "data": {
             "mapping_id": new_mapping.id, # 어르신이 수락/거절 누를 때 보낼 매핑 식별키
             "guardian_name": current_user.name, # 팝업에 띄워줄 보호자 이름 (예: "자녀 홍길동")
-            "message": f"{current_user.name} 님이 기기 연동을 요청했습니다. 수락하시겠습니까?"
+            "message": f"{current_user.name} 님이 보호자 연동을 요청했습니다. 수락하시겠습니까?"
         }
     }
 

@@ -57,7 +57,7 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
                 "data": {
                     "mapping_id": req.id,
                     "guardian_name": guardian_name,
-                    "message": f"{guardian_name} 님이 기기 연동을 요청했습니다. 수락하시겠습니까?"
+                    "message": f"{guardian_name} 님이 보호자 연동을 요청했습니다. 수락하시겠습니까?"
                 }
             }
             await websocket.send_text(json.dumps(payload))
@@ -68,20 +68,53 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
     finally:
         db.close()
     # ==============================================================
-
+    # 실시간 통신 루프 (메시지 수신)
+    # ==============================================================
     try:
         while True:
-            # 2. 기기(React ➔ HW ➔ 백엔드)로부터 메시지 수신
             data = await websocket.receive_text()
-            payload = json.loads(data)
-            action = payload.get("action")
             
+            # JSON 파싱 에러 방어 로직
+            try:
+                payload = json.loads(data)
+            except json.JSONDecodeError:
+                print(f"⚠️ [WS] 잘못된 데이터 형식 수신: {data}")
+                continue
+                
+            action = payload.get("action")
             print(f"📥 [클라우드 WS 수신] dependent_id={dependent_id}, data={payload}")
-
-            # 3. [기존 로직 유지] 어르신이 기기에서 연동을 수락하거나 거절했을 때의 처리
+            
+            # 5. 어르신이 연동을 수락/거절했을 때의 처리 로직
             if action in ["PAIRING_ACCEPTED", "PAIRING_REJECTED"]:
-                mapping_id = payload.get("mapping_id")
-                # ... (DB 상태 변경 기존 코드) ...
+                mapping_id = payload.get("data", {}).get("mapping_id") or payload.get("mapping_id")
+                
+                update_db = SessionLocal()
+                try:
+                    mapping = update_db.query(GuardianDependentMapping).filter(
+                        GuardianDependentMapping.id == mapping_id
+                    ).first()
+                    
+                    if mapping:
+                        if action == "PAIRING_ACCEPTED":
+                            # 수락 시 CONNECTED 상태로 변경
+                            mapping.status = "CONNECTED"
+                            update_db.commit()
+                            print(f"🤝 [WS] 연동 수락: 상태를 CONNECTED로 변경 완료 (ID: {mapping_id})")
+                            
+                        elif action == "PAIRING_REJECTED":
+                            # 거절 시 mapping 테이블에서 레코드 삭제
+                            update_db.delete(mapping)
+                            update_db.commit()
+                            print(f"🗑️ [WS] 연동 거절: mapping 테이블에서 데이터 삭제 완료 (ID: {mapping_id})")
+                    else:
+                        print(f"⚠️ [WS] 처리 실패: 존재하지 않는 연동 ID ({mapping_id})")
+                        
+                except Exception as e:
+                    update_db.rollback()  # 오류 발생 시 롤백 안전장치 추가
+                    print(f"🚨 연동 처리 중 DB 오류 (Action: {action}): {e}")
+                finally:
+                    update_db.close()
+            
                 
     except WebSocketDisconnect:
         # 연결이 끊어졌을 때 매니저에서 제거
