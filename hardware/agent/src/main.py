@@ -35,19 +35,33 @@ HW_MAC_ADDRESS = settings.RASPI_MAC
 AI_SERVER_URL = settings.AI_SERVER_URL
 DEPENDENT_ID = settings.DEPENDENT_ID
 DEPENDENT_NAME = None
-DEVICE_API_KEY = settings.HW_TOKEN
+DEVICE_HW_KEY = settings.HW_TOKEN
+DEVICE_AI_KEY = settings.AI_TOKEN
 BASE_DIR = "/app/data"
 
 BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
 
+active_frontend_ws = None
+
+# ==========================================
+# React가 클라우드로 보낼 메시지를 담아둘 우체통(Queue)
+# ==========================================
+cloud_outbound_queue = asyncio.Queue()
+
 # ==========================================
 # 부팅 시 자동 등록 및 인증 통합 함수
 # ==========================================
 async def boot_and_authenticate():
-    """부팅 시 MAC 주소 기반으로 서버에 등록하고 JWT 토큰을 발급받음"""
-    global DEPENDENT_ID, DEPENDENT_NAME, DEVICE_TOKEN
+    """부팅 시 MAC 주소와 HW_SECRET_KEY 기반으로 서버에 등록하고 JWT 토큰을 발급받음"""
+    global DEPENDENT_ID, DEPENDENT_NAME, DEVICE_TOKEN, DEVICE_HW_KEY
     
+    # 환경변수에서 하드웨어 시크릿 키 로드 (없으면 진행 불가)
+    # (앞서 .env에 설정한 변수명에 맞게 "DEVICE_HW_KEY" 사용)
+    if not DEVICE_HW_KEY:
+        print("❌ 에러: .env 파일에 DEVICE_HW_KEY(하드웨어 보안 키)이 설정되지 않았습니다.")
+        return False
+        
     url = f"{BACKEND_URL}/api/v1/dependent/device/register"
     
     # 기본 정보 셋팅 (이후에 보호자 앱에서 변경 가능)
@@ -58,18 +72,22 @@ async def boot_and_authenticate():
         "age": int(os.getenv("DEPENDENT_AGE", 75))
     }
     
+    #  백엔드의 HTTPBearer(validate_hw_key)가 인식할 수 있도록 헤더 구성
+    headers = {
+        "Authorization": f"Bearer {DEVICE_HW_KEY}"
+    }
+    
     print(f"📡 백엔드 서버와 통신 중... (MAC: {HW_MAC_ADDRESS})")
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(url, json=payload, timeout=5) as response:
+            # post 요청 시 headers 옵션 추가
+            async with session.post(url, json=payload, headers=headers, timeout=5) as response:
                 res_json = await response.json()
                 
-                # 🌟 [디버깅] 백엔드가 실제로 어떤 JSON을 주는지 터미널에 찍어봅니다.
                 print(f"🛠️ 백엔드 응답 데이터: {res_json}")
                 
-                # 🌟 JSON 본문(status_code) 검사 조건 제거, HTTP 상태 코드로만 성공 판단
+                # HTTP 상태 코드로만 성공 판단
                 if response.status in [200, 201]:
-                    # data가 None일 경우를 대비해 빈 딕셔너리로 폴백(or {})
                     auth_data = res_json.get("data") or {} 
                     
                     DEVICE_TOKEN = auth_data.get("access_token")
@@ -77,20 +95,65 @@ async def boot_and_authenticate():
                     DEPENDENT_NAME = payload["name"]
                     
                     if DEVICE_TOKEN and DEPENDENT_ID:
-                        print(f"✅ 기기 셋업 완료! [JWT 토큰 발급 성공]")
+                        print(f"✅ 기기 셋업 완료! [보안 승인 및 JWT 토큰 발급 성공]")
                         return True
                     else:
                         print("❌ 성공 응답을 받았지만, 데이터(Token/ID)가 누락되었습니다.")
                         return False
                 else:
-                    # 실패 시 백엔드가 보낸 에러 메시지 출력
-                    error_msg = res_json.get('error', res_json.get('message', '알 수 없는 서버 에러'))
+                    error_msg = res_json.get('detail', res_json.get('message', '알 수 없는 서버 에러'))
                     print(f"❌ 기기 셋업 실패 (HTTP {response.status}): {error_msg}")
                     return False
         except Exception as e:
             print(f"❌ 서버 연결 에러: {e}")
             return False
-        
+
+
+# ==========================================
+# [수정] 클라우드 백엔드 웹소켓 클라이언트 (양방향 송수신)
+# ==========================================
+async def cloud_websocket_client():
+    ws_base = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://")
+    cloud_ws_url = f"{ws_base}/ws/device/{DEPENDENT_ID}"
+    
+    global DEVICE_TOKEN
+    
+    headers = {
+        "Authorization": f"Bearer {DEVICE_TOKEN}"
+    }
+    
+    while True:
+        try:
+            print(f"[클라우드 WS] 백엔드({cloud_ws_url})에 연결 시도 중...")
+            async with websockets.connect(cloud_ws_url, extra_headers=headers) as cloud_ws:
+                print("✅ [클라우드 WS] 백엔드 웹소켓 연결 성공!")
+                
+                # 1. 수신 루프 (클라우드 ➔ React)
+                async def receive_from_cloud():
+                    global active_frontend_ws
+                    async for message in cloud_ws:
+                        data = json.loads(message)
+                        print(f"📥 [클라우드 ➔ HW]: {data}")
+                        if active_frontend_ws is not None:
+                            await active_frontend_ws.send(message) # React로 그대로 전달
+                
+                # 2. 송신 루프 (React ➔ 우체통 ➔ 클라우드)
+                async def send_to_cloud():
+                    while True:
+                        # 큐에 데이터가 들어올 때까지 대기하다가 들어오면 빼냄
+                        outbound_msg = await cloud_outbound_queue.get()
+                        await cloud_ws.send(json.dumps(outbound_msg))
+                        print(f"📤 [HW ➔ 클라우드] 전송 완료: {outbound_msg}")
+                        cloud_outbound_queue.task_done()
+
+                # 두 루프를 동시에 실행 (둘 중 하나라도 끊어지면 예외 발생하여 재연결 루프로 감)
+                await asyncio.gather(receive_from_cloud(), send_to_cloud())
+                        
+        except Exception as e:
+            print(f"❌ [클라우드 WS] 연결 끊김 또는 에러 발생: {e}. 5초 후 재연결...")
+            await asyncio.sleep(5)
+
+
 # ==========================================
 # [로컬] STT 및 오디오 분석 모듈
 # ==========================================
@@ -249,13 +312,17 @@ async def get_response_from_ai_server(session, raw_text: str, memory_context: st
 # 5. 메인 웹소켓 컨트롤러 (강화 버전)
 # ==========================================
 async def handle_client(websocket, path="/"):
-    print("[웹소켓] React 프론트엔드 연결 성공!")
+    global active_frontend_ws
+    active_frontend_ws = websocket
+    print("✅ [로컬 WS] React 프론트엔드 연결 성공!")
+    
     async with aiohttp.ClientSession() as session:
         try:
             async_tasks = set()
             async for message in websocket:
                 data = json.loads(message)
                 
+                # 1. 로컬 하드웨어 제어 명령
                 if data.get("command") == "force_record":
                     if not recorder.is_recording:
                         recorder.start_recording()
@@ -307,8 +374,26 @@ async def handle_client(websocket, path="/"):
                             finally:
                                 # 어떤 상황에서도 UI 상태는 idle로 복구
                                 await websocket.send(json.dumps({"status": "idle"}))
+
+                # 2. 프론트엔드가 클라우드(백엔드)로 보내려는 상태나 응답인 경우
+                elif data.get("target") == "cloud":
+                    print(f"[React ➔ HW] 클라우드 전송 요청 수신: {data}")
+                    # 수신한 데이터를 즉시 우체통(Queue)에 넣어서 send_to_cloud()가 가져가게 함
+                    await cloud_outbound_queue.put(data.get("payload"))
+                
+                # 3. 단순 프론트엔드 상태 변경 알림 (필요시 파이썬에서 사용)
+                else:
+                    print(f"[React 내부 상태 알림]: {data}")
+                
+        
+        
         except websockets.exceptions.ConnectionClosed:
             print("[웹소켓] 연결 해제")
+            
+        finally:
+            if active_frontend_ws == websocket:
+                active_frontend_ws = None
+        
     
 # ==========================================
 # 애플리케이션 시작점
@@ -321,17 +406,23 @@ async def main():
         print("⚠️ 기기 인증 실패. 시스템 대기 모드로 진입합니다.")
         return
     
-    # 1. 백그라운드 워커를 이벤트 루프에 미리 등록하여 실행
+    # 1. 백그라운드 오디오 워커 실행 (기존)
     worker_task = asyncio.create_task(background_audio_worker())
     
-    # 2. 웹소켓 서버 시작
+    # ==========================================================
+    # 2. 클라우드 백엔드 통신용 웹소켓 클라이언트 백그라운드 실행
+    # ==========================================================
+    cloud_ws_task = asyncio.create_task(cloud_websocket_client())
+    
+    # 3. 로컬 프론트엔드(React) 통신용 웹소켓 서버 시작 (기존)
     server = await websockets.serve(handle_client, "0.0.0.0", 8765)
     print("[Edge] 라즈베리 파이 엣지 서버 가동 시작 (포트: 8765)")
     
     await server.wait_closed()
     
-    # 워커 종료 처리 (서버가 닫힐 때)
+    # 종료 처리 (서버가 닫힐 때)
     worker_task.cancel()
+    cloud_ws_task.cancel()  # 클라우드 웹소켓 태스크도 함께 종료되도록 추가
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.response import unified_response
 from api.v1.router import api_router 
+from api.v1.ws import ws_router
 
 
 try:
@@ -73,7 +74,8 @@ async def db_operational_error_handler(request: Request, exc: OperationalError):
 # CORS 미들웨어 설정 (반드시 app.include_router 보다 위에 작성)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS, # 리스트 형태로 깔끔하게 주입
+    #allow_origins=settings.ALLOWED_ORIGINS, # 리스트 형태로 깔끔하게 주입
+    allow_origins=["*"], # 전체 허용
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -94,6 +96,10 @@ app.mount("/static/diary_images", StaticFiles(directory="/app/uploads/diary_imag
 
 # 라우터 등록 (이 한 줄로 모든 api/v1/... 경로가 활성화됩니다!)
 app.include_router(api_router, prefix="/api/v1")
+
+# 어르신 기기 전용 ws
+app.include_router(ws_router.ws_router, prefix="/ws", tags=["websocket"])
+
 
 # 사파리 브라우저 아이콘 요청시 void return
 @app.get("/favicon.ico", include_in_schema=False)

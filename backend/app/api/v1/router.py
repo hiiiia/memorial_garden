@@ -34,5 +34,6 @@ api_router.include_router(guardians.router, prefix="/guardian", tags=["Guardian"
 
 api_router.include_router(dependents.router, prefix="/dependent", tags=["dependent"])
 
+
 # RAG 라우터
-api_router.include_router(rag.router, prefix="/memory", tags=["Memory"])
+#api_router.include_router(rag.router, prefix="/memory", tags=["Memory"])
