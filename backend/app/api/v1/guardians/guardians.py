@@ -8,7 +8,7 @@ from typing import Optional
 from db.database import get_db
 from db.models import Dependent, GuardianDependentMapping, Guardian
 from api.v1.deps import get_current_user # 현재 로그인한 보호자 정보를 가져오는 함수
-from api.v1.websocket import device_ws_manager
+from api.v1.ws.websocket_manager import device_ws_manager
 from core.response import unified_response
 
 class DependentSearchData(BaseModel):

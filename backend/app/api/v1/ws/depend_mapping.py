@@ -2,7 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import json
 from db.database import SessionLocal 
 from db.models import GuardianDependentMapping
-from api.v1.websocket.websocket_manager import device_ws_manager
+from api.v1.ws.websocket_manager import device_ws_manager
 
 ws_router = APIRouter()
 

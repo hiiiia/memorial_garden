@@ -103,7 +103,8 @@ async def boot_and_authenticate():
 # [수정] 클라우드 백엔드 웹소켓 클라이언트 (양방향 송수신)
 # ==========================================
 async def cloud_websocket_client():
-    cloud_ws_url = f"ws://{BACKEND_URL}/ws/device/{DEPENDENT_ID}" 
+    ws_base = BACKEND_URL.replace("http://", "ws://").replace("https://", "wss://")
+    cloud_ws_url = f"{ws_base}/ws/device/{DEPENDENT_ID}"
     
     while True:
         try:
