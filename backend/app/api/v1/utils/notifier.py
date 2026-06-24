@@ -100,8 +100,8 @@ async def send_kakao_alert(guardian: Guardian, dependent_name: str, risk_score: 
         "object_type": "text",
         "text": f"🚨 [긴급 알림] 🚨\n{guardian.name}님, {dependent_name} 어르신의 위험 징후가 감지되었습니다!\n\n■ 위험도: {int(risk_score * 100)}점\n■ AI 요약: {summary}",
         "link": {
-            "web_url": "http://localhost:3000", # 추후 프론트엔드 도메인으로 변경
-            "mobile_web_url": "http://localhost:3000"
+            "web_url": f"{settings.FRONTEND_URL}", # 추후 프론트엔드 도메인으로 변경
+            "mobile_web_url": f"{settings.FRONTEND_URL}"
         },
         "button_title": "상세 상태 확인하기"
     }

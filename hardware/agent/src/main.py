@@ -400,7 +400,9 @@ async def handle_client(websocket, path="/"):
                 
                 # 3. 연결 설정시 device token을 react에 전달
                 elif data.get("command") == "get_token":
-                    await websocket.send(json.dumps({"token": f"{DEVICE_TOKEN}"}))
+                    await websocket.send(json.dumps({"token": f"{DEVICE_TOKEN}",
+                                                     "HW_MAC" : f"{HW_MAC_ADDRESS}"
+                                                     }))
                     
                     print(f"[React에 토큰 전달 완료]: {DEVICE_TOKEN}")
                 else :
