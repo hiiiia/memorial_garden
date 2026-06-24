@@ -29,6 +29,7 @@ export interface RiskAssessment {
 }
 
 export interface LastInteraction {
+  date: string | null;       // 실제 완료 대화 날짜 (YYYY-MM-DD), 기록이 없으면 null
   time_label: string;     // '오늘 오전 09:12' 등
   duration_label: string; // 'AI와 대화 완료' 등
   summary?: string;       // 금일 대화 요약. API에서 없을 수도 있어서 선택값 처리

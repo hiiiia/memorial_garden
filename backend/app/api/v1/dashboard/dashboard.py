@@ -71,6 +71,12 @@ def get_guardian_dashboard(
         func.date(Log.created_at) == target_date
     ).order_by(Log.created_at.desc()).first()
 
+    last_interaction_log = db.query(Log).filter(
+        Log.dependent_id == user_id,
+        Log.status == "COMPLETED",
+        func.date(Log.created_at) <= dt_date.today()
+    ).order_by(Log.created_at.desc()).first()
+
     # 4. 프론트엔드 포맷 초기화 (기본값 설정)
     state = "good"
     label = "안정"
@@ -81,6 +87,7 @@ def get_guardian_dashboard(
     status_text = "안정적인 상태입니다."
     time_label = "대화 기록 없음"
     duration_label = "라즈베리파이 연결 상태를 확인하세요."
+    last_interaction_date = None
 
     if latest_log:
         risk_score = int((latest_log.risk_score or 0) * 100) if latest_log.risk_score <= 1.0 else int(latest_log.risk_score)
@@ -101,8 +108,12 @@ def get_guardian_dashboard(
             if latest_log.llm_summary:
                 description = latest_log.llm_summary
 
-        formatted_time = latest_log.created_at.strftime('%p %I:%M')
-        time_label = f"오늘 {formatted_time.replace('AM', '오전').replace('PM', '오후')}"
+    if last_interaction_log:
+        interaction_date = last_interaction_log.created_at.date()
+        last_interaction_date = interaction_date.isoformat()
+        formatted_time = last_interaction_log.created_at.strftime('%p %I:%M')
+        date_label = "오늘" if interaction_date == dt_date.today() else interaction_date.strftime("%Y.%m.%d")
+        time_label = f"{date_label} {formatted_time.replace('AM', '오전').replace('PM', '오후')}"
         duration_label = "AI와 대화 완료"
 
     # 5. Alert 테이블에서 최근 알림 데이터 3개 조회
@@ -162,6 +173,7 @@ def get_guardian_dashboard(
             "status_text": status_text
         },
         "last_interaction": {
+            "date": last_interaction_date,
             "time_label": time_label,
             "duration_label": duration_label
         },
@@ -380,12 +392,17 @@ def get_monthly_diary_payload(
             kw_list = ["일상", log.primary_emotion or "안정"]
 
         # 📖 1. 일기 탭 데이터 적재
+        raw_risk = log.risk_score or 0.0
+        risk_score = raw_risk * 100 if raw_risk <= 1.0 else raw_risk
+        risk_score = max(0, min(100, round(risk_score)))
+
         diary_list.append({
             "id": log.id,
             "date": log_date_str,
             "imageUrl": log.image_url or "https://via.placeholder.com/800x400?text=No+Image",
             "content": log.diary_text or log.llm_summary or "기록된 일기가 없습니다.",
-            "keywords": kw_list
+            "keywords": kw_list,
+            "riskScore": risk_score
         })
 
         # 🩺 2. 건강 보고서 탭 데이터 적재 (Float 점수 -> 0~100 정수 스케일링 적용)
