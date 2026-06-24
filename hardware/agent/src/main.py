@@ -234,6 +234,7 @@ recorder = AudioRecorder()
 # 전역 비동기 큐 생성
 audio_task_queue = asyncio.Queue()
 
+
 # ==========================================
 # [소비자] Track 2: 백그라운드 워커 (무한 루프)
 # ==========================================
@@ -242,6 +243,7 @@ async def background_audio_worker():
     큐에 들어온 오디오 파일들을 순차적으로 AI 서버에 업로드하고 파기합니다.
     서버가 시작될 때 백그라운드에서 단 하나만 실행되어 대기합니다.
     """
+    global DEVICE_AI_KEY
     print("[Background Worker] 오디오 업로드 워커 대기 중...")
     
     while True:
@@ -257,7 +259,7 @@ async def background_audio_worker():
             audio_task_queue.task_done()
             continue
 
-        # 2. AI 서버로 업로드
+        # 2. AI 서버로 업로드 (인증 헤더 추가)
         try:
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()
@@ -267,8 +269,14 @@ async def background_audio_worker():
 
                 url = f"{AI_SERVER_URL}/api/v1/analyze/audio"
                 
+                # 인증 헤더 세팅
+                headers = {
+                    "Authorization": f"Bearer {DEVICE_AI_KEY}"
+                }
+                
                 print(f"[Edge Worker] 업로드 시작: {wav_path}")
-                async with session.post(url, data=data) as resp:
+                
+                async with session.post(url, data=data, headers=headers) as resp:
                     if resp.status in (200, 202):
                         print(f"[Edge Worker] 업로드 성공: {wav_path}")
                     else:
@@ -290,23 +298,32 @@ async def background_audio_worker():
 # [생산자] Track 1: 실시간 초저지연 라우팅 
 # ==========================================
 async def get_response_from_ai_server(session, raw_text: str, memory_context: str):
+    global DEVICE_AI_KEY
+    
     url = f"{AI_SERVER_URL}/api/v1/edge/route"
     payload = {
         "user_id": DEPENDENT_ID,
         "text": raw_text,
         "memory_context": memory_context
     }
+    
+    # 인증 헤더 세팅
+    headers = {
+        "Authorization": f"Bearer {DEVICE_AI_KEY}"
+    }
+    
     try:
-        async with session.post(url, json=payload, timeout=5.0) as resp:
+        async with session.post(url, json=payload, headers=headers, timeout=5.0) as resp:
             if resp.status == 200:
                 return await resp.json()
+            else:
+                print(f"[Edge Error] 비정상 응답: HTTP {resp.status}")
     except Exception as e:
         print(f"[Edge Error] 라우팅 서버 호출 실패: {e}")
         
     return {
         "local_reply": "어르신, 제가 방금 하신 말씀을 놓쳤어요. 다시 한 번 말씀해 주시겠어요?"
     }
-
 
 # ==========================================
 # 5. 메인 웹소켓 컨트롤러 (강화 버전)
