@@ -1,7 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, status
 import json
 from db.database import SessionLocal 
-from db.models import GuardianDependentMapping
+from db.models import GuardianDependentMapping, Log
 from api.v1.ws.websocket_manager import device_ws_manager
 from api.v1.deps import verify_hw_jwt_token
 ws_router = APIRouter()
@@ -119,3 +119,35 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
     except WebSocketDisconnect:
         # 연결이 끊어졌을 때 매니저에서 제거
         device_ws_manager.disconnect(dependent_id)
+
+
+# AI 오케스트레이터가 작업 완료 후 호출하는 콜백 라우터 또는 내부 서비스 함수
+async def notify_new_diary_to_device(dependent_id: str, new_diary: Log):
+    """
+    그림일기가 생성된 직후, 연결된 어르신 기기로 웹소켓 알림을 발송합니다.
+    """
+    # 1. 기기가 현재 웹소켓에 연결되어 있는지 확인
+    if dependent_id in device_ws_manager.active_connections:
+        print(f"📡 [WS] {dependent_id} 기기가 온라인입니다. 새 일기 알림을 전송합니다.")
+        
+        # 2. 어르신 화면(React)이 알아들을 수 있는 포맷으로 페이로드 작성
+        payload = {
+            "action": "NEW_DIARY_ARRIVED",
+            "data": {
+                "diary_id": new_diary.id,
+                "title": new_diary.title,
+                "message": "어르신, 방금 나누신 대화로 예쁜 그림일기가 도착했어요! 함께 보실래요?",
+                "image_url": new_diary.image_url # 팝업에 미리보기 썸네일을 띄워줄 수도 있습니다.
+            }
+        }
+        
+        # 3. 실시간 전송!
+        try:
+            await device_ws_manager.send_personal_message(payload, dependent_id)
+            print(f"✅ [WS] 새 일기 알림 전송 성공: {new_diary.id}")
+        except Exception as e:
+            print(f"🚨 [WS] 알림 전송 중 에러 발생: {e}")
+            
+    else:
+        # 기기가 꺼져있다면 나중에 켰을 때 GET API로 불러오게 되므로 로그만 남깁니다.
+        print(f"💤 [WS] {dependent_id} 기기가 오프라인 상태입니다. (알림 생략)")

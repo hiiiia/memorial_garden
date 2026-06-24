@@ -11,48 +11,114 @@ interface MemoryData {
   date: string;
   desc: string[];
 }
+
+interface Diary {
+  id: string | number;
+  title: string;
+  content: string;
+  image_url: string;
+  created_at: string; // 예: "2026년 06월 24일"
+}
+
 const KioskPage: React.FC = () => {
-  // 1. 화면 전환 상태 (팀원 코드)
+  // ==========================================
+  // 1. 화면 및 통신 상태 관리
+  // ==========================================
+  // 화면 전환 상태
   const [screen, setScreen] = useState<Screen>('home');
 
-  // 2. 파이썬 에이전트 통신 상태 (기존 코드)
+  // 파이썬 에이전트 통신 상태
   const [agentState, setAgentState] = useState<AgentState>('idle');
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [aiText, setAiText] = useState<string>('안녕하세요 어르신\n오늘은 어떤 하루를\n보내셨나요?');
 
-  // 선택된 상세 추억 상태
-  const [selectedMemory, setSelectedMemory] = useState<MemoryData | null>(null);
-
-  // 추억 보관함 페이징(슬라이드) 상태
-  const [memoryPage, setMemoryPage] = useState(0);
-
-  // 실제 데이터가 있다고 가정 (기존 데이터 배열로 교체하세요)
-  const allMemories: MemoryData[] = [];
-
-  // 팝업 상태(연동 요청)
+  // 연동 팝업 상태
   const [showPairingPopup, setShowPairingPopup] = useState<boolean>(false);
   const [pairingData, setPairingData] = useState<{ guardianName: string; mappingId: number | null }>({
     guardianName: '',
     mappingId: null
   });
 
-  // 화면에 보여줄 메모리 개수 계산 (예: 한 번에 3개씩 렌더링)
-  const itemsPerPage = 3;
-  const visibleMemories = allMemories.slice(
-    memoryPage * itemsPerPage,
-    (memoryPage + 1) * itemsPerPage
-  );
+  // ==========================================
+  // 2. 그림일기(추억) 데이터 상태 관리
+  // ==========================================
+  const [diaries, setDiaries] = useState<Diary[]>([]);
+  const [selectedDiary, setSelectedDiary] = useState<Diary | null>(null); // 기존 selectedMemory 대체
+  const [showNotification, setShowNotification] = useState<string | null>(null); // 새 일기 알림 팝업
 
-  // 좌우 화살표 클릭 핸들러
-  const handlePrevMemory = () => {
-    if (memoryPage > 0) setMemoryPage(prev => prev - 1);
-  };
+  // 백엔드에서 일기 데이터 불러오기
+  const fetchDiaries = async () => {
+    try {
+      const token = localStorage.getItem("DEVICE_TOKEN");
+      if (!token) return;
 
-  const handleNextMemory = () => {
-    if ((memoryPage + 1) * itemsPerPage < allMemories.length) {
-      setMemoryPage(prev => prev + 1);
+      const response = await fetch("http://localhost:8000/api/v1/dependent/diary", {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      });
+      
+      const resData = await response.json();
+      if (resData.status_code === 200) {
+        setDiaries(resData.data.diaries);
+      }
+    } catch (error) {
+      console.error("일기장 데이터를 불러오는데 실패했습니다:", error);
     }
   };
+
+  // ==========================================
+  // 3. [오늘의 일기] 날짜 포맷 및 필터링
+  // ==========================================
+  const getTodayString = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}년 ${m}월 ${d}일`;
+  };
+
+  const todayFormatted = getTodayString();
+  const todayDiary = diaries.find((diary) => diary.created_at === todayFormatted);
+  
+  // ==========================================
+  // 4. [나의 추억] 날짜별 그룹핑 + 3개씩 페이징
+  // ==========================================
+  const ITEMS_PER_PAGE = 3;
+
+  // 상태: 날짜 인덱스와 페이징 인덱스
+  const [selectedDateIndex, setSelectedDateIndex] = useState(0); 
+  const [itemStartIndex, setItemStartIndex] = useState(0);       
+
+  // 데이터 파생: 고유 날짜 추출 및 현재 뷰 데이터
+  const uniqueDates = Array.from(new Set(diaries.map(d => d.created_at)));
+  const currentViewDate = uniqueDates[selectedDateIndex];
+  const diariesForDate = diaries.filter((d) => d.created_at === currentViewDate);
+  const visibleMemories = diariesForDate.slice(itemStartIndex, itemStartIndex + ITEMS_PER_PAGE);
+
+  // 날짜가 변경되거나 일기가 업데이트되면, 페이지를 처음(0)으로 리셋
+  useEffect(() => {
+    setItemStartIndex(0);
+  }, [selectedDateIndex, diaries]);
+
+  // --- 핸들러: 날짜 이동 (상단 네비게이션) ---
+  const handlePrevDate = () => {
+    if (selectedDateIndex < uniqueDates.length - 1) setSelectedDateIndex((prev) => prev + 1);
+  };
+  const handleNextDate = () => {
+    if (selectedDateIndex > 0) setSelectedDateIndex((prev) => prev - 1);
+  };
+
+  // --- 핸들러: 아이템 페이징 (중앙 화살표) ---
+  const handlePrevItems = () => {
+    if (itemStartIndex - ITEMS_PER_PAGE >= 0) setItemStartIndex((prev) => prev - ITEMS_PER_PAGE);
+  };
+  const handleNextItems = () => {
+    if (itemStartIndex + ITEMS_PER_PAGE < diariesForDate.length) setItemStartIndex((prev) => prev + ITEMS_PER_PAGE);
+  };
+
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -73,6 +139,18 @@ const KioskPage: React.FC = () => {
             mappingId: data.data.mapping_id
           });
           setShowPairingPopup(true); // 팝업 열기
+        }
+        
+        // AI 오케스트레이터가 작업 완료 후 호출
+        if (data.action === "NEW_DIARY_ARRIVED") {
+          // 1. 화면에 큼직한 알림 띄우기
+          setShowNotification(data.data.message);
+          
+          // 2. 일기장 목록 최신화!
+          fetchDiaries();
+          
+          // 3. 5초 뒤에 알림 자동 닫기
+          setTimeout(() => setShowNotification(null), 5000);
         }
 
         if (data.status) {
@@ -245,31 +323,7 @@ const KioskPage: React.FC = () => {
           </button>
         </div>
       )}
-      {screen === 'diary' && (
-        <div className="home-card diary-card">
-          <h1 className="diary-title">오늘의 일기</h1>
-
-          <div className="diary-content">
-            <div className="diary-image">
-              시장 그림
-            </div>
-
-            <div className="diary-text-box">
-              오늘은 시장에 다녀왔어요.<br />
-              채소도 사고 친구도 만나서<br />
-              즐거웠어요.
-            </div>
-          </div>
-
-          <div className="diary-buttons">
-            <button className="diary-listen-btn">🔊 다시듣기</button>
-
-            <button className="diary-next-btn" onClick={() => setScreen('send')}>
-              ➡ 다음
-            </button>
-          </div>
-        </div>
-      )}
+   
       {screen === 'send' && (
         <div className="home-card send-card">
           <h1 className="send-title">가족에게 보내기</h1>
@@ -322,51 +376,137 @@ const KioskPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================== */}
+      {/* 1. 오늘의 일기 (오늘 날짜만)                   */}
+      {/* ========================================== */}
+      {screen === 'diary' && (
+        <div className="home-card diary-card">
+          <h1 className="diary-title">오늘의 일기</h1>
+          <p className="diary-date">{todayFormatted}</p>
+
+          {todayDiary ? (
+            <div className="diary-content">
+              <div className="diary-image">
+                {todayDiary.image_url ? (
+                  <img src={todayDiary.image_url} alt="오늘의 그림" />
+                ) : (
+                  <span>그림 준비 중 🎨</span>
+                )}
+              </div>
+
+              <div className="diary-text-box">
+                {todayDiary.content}
+              </div>
+            </div>
+          ) : (
+            <div className="diary-empty">
+              <span className="empty-icon">📭</span>
+              <p>어르신, 오늘은 아직 일기를 쓰지 않으셨어요.</p>
+              <small>대화를 나누면 일기가 자동으로 만들어집니다.</small>
+            </div>
+          )}
+
+          <div className="diary-buttons">
+            {todayDiary && <button className="diary-listen-btn">🔊 다시듣기</button>}
+            <button className="diary-next-btn" onClick={() => setScreen('send')}>
+              ➡ 다음
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* 2. 나의 추억 (날짜 선택 + 3개씩 페이징 결합)       */}
+      {/* ========================================== */}
       {screen === 'memory' && (
         <div className="home-card memory-card">
           <h1 className="memory-title">나의 추억</h1>
+          
+          {/* 상단: 날짜 이동 네비게이션 */}
+          {uniqueDates.length > 0 && (
+            <div className="memory-nav">
+              <button 
+                onClick={handlePrevDate} 
+                disabled={selectedDateIndex === uniqueDates.length - 1}
+                className="memory-nav-btn"
+              >
+                ◀ 과거로
+              </button>
+              <h2 className="memory-nav-date">{currentViewDate}</h2>
+              <button 
+                onClick={handleNextDate} 
+                disabled={selectedDateIndex === 0}
+                className="memory-nav-btn"
+              >
+                최신으로 ▶
+              </button>
+            </div>
+          )}
 
+          {/* 중앙: 3개씩 보여주는 리스트와 페이징 화살표 */}
           <div className="memory-content">
-            <button className="memory-arrow" onClick={handlePrevMemory}>
+            <button 
+              className="memory-arrow" 
+              onClick={handlePrevItems}
+              disabled={itemStartIndex === 0}
+            >
               ‹
             </button>
 
             <div className="memory-list">
-              {visibleMemories.map((memory, index) => (
-                <div className="memory-item" key={index}>
-                  <div className="memory-image">{memory.image}</div>
+              {visibleMemories.length > 0 ? (
+                visibleMemories.map((memory) => (
+                  <div className="memory-item" key={memory.id}>
+                    
+                    <div className="memory-image">
+                      {memory.image_url ? (
+                        <img src={memory.image_url} alt={memory.title} />
+                      ) : (
+                        <span>🎨</span>
+                      )}
+                    </div>
 
-                  <div className="memory-info">
-                    <h2>{memory.title}</h2>
-                    <p>{memory.date}</p>
+                    <div className="memory-info">
+                      <h2>{memory.title}</h2>
+                    </div>
+
+                    <div className="memory-action-buttons">
+                      <button
+                        className="memory-send-btn"
+                        onClick={() => {
+                          setSelectedDiary(memory);
+                          setScreen('finish');
+                        }}
+                      >
+                        ✉ 보내기
+                      </button>
+
+                      <button
+                        className="memory-view-btn"
+                        onClick={() => {
+                          setSelectedDiary(memory);
+                          setScreen('detail');
+                        }}
+                      >
+                        🔍 보기
+                      </button>
+                    </div>
                   </div>
-
-                  <div className="memory-action-buttons">
-                    <button
-                      className="memory-send-btn"
-                      onClick={() => {
-                        setSelectedMemory(memory);
-                        setScreen('finish');
-                      }}
-                    >
-                      ✉ 보내기
-                    </button>
-
-                    <button
-                      className="memory-view-btn"
-                      onClick={() => {
-                        setSelectedMemory(memory);
-                        setScreen('detail');
-                      }}
-                    >
-                      🔍 보기
-                    </button>
-                  </div>
+                ))
+              ) : (
+                <div className="memory-empty">
+                  <span className="empty-icon">🗂️</span>
+                  <p>저장된 추억이 없습니다.</p>
                 </div>
-              ))}
+              )}
             </div>
 
-            <button className="memory-arrow" onClick={handleNextMemory}>
+            <button 
+              className="memory-arrow" 
+              onClick={handleNextItems}
+              disabled={itemStartIndex + ITEMS_PER_PAGE >= diariesForDate.length}
+            >
               ›
             </button>
           </div>
@@ -376,6 +516,7 @@ const KioskPage: React.FC = () => {
           </button>
         </div>
       )}
+
       {screen === 'detail' && (
         <div className="home-card detail-card">
           <div className="detail-top">
@@ -476,7 +617,12 @@ const KioskPage: React.FC = () => {
           </div>
         </div>
       )}
-
+      {/* 팝업: 새 일기 도착 알림 */}
+      {showNotification && (
+        <div className="fixed top-10 left-1/2 transform -translate-x-1/2 bg-orange-400 text-white px-8 py-4 rounded-full shadow-2xl text-2xl z-50 animate-bounce">
+          🔔 {showNotification}
+        </div>
+      )}
       
     </div>
   );

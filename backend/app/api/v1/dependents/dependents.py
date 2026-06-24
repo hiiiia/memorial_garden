@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from db.database import get_db
-from db.models import GuardianDependentMapping, Dependent
+from db.models import GuardianDependentMapping, Dependent, Log
 
-#from api.v1.deps import get_current_dependent 
+from api.v1.deps import get_current_dependent_jwt 
 from api.v1.utils.security import get_password_hash
 from api.v1.utils.jwt import create_access_token
 from api.v1.deps import validate_hw_key
@@ -120,5 +120,45 @@ def register_device(request: DeviceRegisterRequest, db: Session = Depends(get_db
         data={
             "access_token": new_jwt_token, 
             "dependent_id": request.hw_id
+        }
+    )
+    
+    
+@router.get("/diary")
+def get_picture_diaries(
+    limit: int = 10,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_dep: Dependent = Depends(get_current_dependent_jwt) # 토큰을 통해 어르신 객체 자동 로드!
+):
+    """
+    어르신 기기(React 프론트엔드)에서 본인의 그림일기 목록을 조회하는 API
+    """
+    # 1. 해당 어르신의 일기 데이터만 최신순으로 가져오기
+    # (주의: Memory.dependent_id 와 current_dep.id 가 매칭되는지 확인)
+    diaries = db.query(Log).filter(
+        Log.dependent_id == current_dep.id,
+        Log.type == "DIARY" # 만약 테이블에 다른 데이터도 섞여있다면 타입으로 필터링
+    ).order_by(Log.created_at.desc()).offset(offset).limit(limit).all()
+    
+    # 2. React 화면에서 렌더링하기 편하도록 예쁘게 가공
+    result = []
+    for diary in diaries:
+        result.append({
+            "id": diary.id,
+            "title": diary.title,           # 예: "즐거운 산책"
+            "content": diary.content,       # 일기 본문 (텍스트)
+            "image_url": diary.image_url,   # AI가 생성한 이미지 주소 (S3 URL 등)
+            # 날짜를 어르신이 보기 편한 문자열 형태로 변환
+            "created_at": diary.created_at.strftime("%Y년 %m월 %d일") 
+        })
+        
+    # 3. 통일된 응답 포맷으로 반환
+    return unified_response(
+        status_code=200,
+        message="그림일기 조회에 성공했습니다.",
+        data={
+            "total_fetched": len(result),
+            "diaries": result
         }
     )
