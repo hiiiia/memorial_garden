@@ -32,8 +32,59 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         
     return user
 
-
 security_bearer = HTTPBearer(auto_error=False)
+
+# --- 어르신용 JWT API 요청 인증 체계 ---
+def get_current_dependent_jwt(
+    credentials: HTTPAuthorizationCredentials = Depends(security_bearer),
+    db: Session = Depends(get_db)
+) -> Dependent:
+    """
+    헤더의 Bearer 토큰을 검증하고, DB에서 해당 어르신(Dependent) 객체를 찾아 반환합니다.
+    """
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Authorization 헤더에 토큰이 없습니다."
+        )
+
+    try:
+        # JWT 토큰 디코딩
+        payload = jwt.decode(
+            credentials.credentials, 
+            settings.JWT_SECRET_KEY, 
+            algorithms=[settings.ALGORITHM]
+        )
+        
+        # 'sub' 클레임에서 hw_id(dependent_id) 추출
+        dependent_id = payload.get("sub")
+        if not dependent_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail="토큰에 유효한 사용자 ID(sub)가 없습니다."
+            )
+
+        # DB에서 어르신 정보 조회
+        dependent = db.query(Dependent).filter(Dependent.id == dependent_id).first()
+        if not dependent:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail="해당 기기(어르신) 정보를 찾을 수 없습니다."
+            )
+            
+        return dependent
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="토큰이 만료되었습니다."
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="유효하지 않은 토큰입니다."
+        )
+
 
 # --- 어르신 기기 jwt 인증 ---
 def verify_hw_jwt_token(token: str) -> str:

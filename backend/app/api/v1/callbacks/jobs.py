@@ -1,5 +1,5 @@
 # backend\app\api\v1\callbacks\jobs.py
-from fastapi import APIRouter, Header, HTTPException, Depends, Request
+from fastapi import APIRouter, Header, HTTPException, Depends, Request, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import os
@@ -19,7 +19,7 @@ from core.config import settings
 from api.v1.utils.notifier import send_emergency_alert, send_kakao_alert
 from api.v1.utils.security import verify_ai_token
 from core.response import unified_response
-
+from api.v1.ws.ws_router import notify_new_diary_to_device
 
 router = APIRouter()
 
@@ -48,6 +48,7 @@ class LogCreateRequest(BaseModel):
 async def receive_healthcare_log(
     request: LogCreateRequest, 
     req: Request, # 서버의 기본 도메인을 동적으로 가져오기 위해 추가
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -111,17 +112,33 @@ async def receive_healthcare_log(
             pitch_variance=analysis.pitch_variance
         )
         
-        db.add(new_log)
-        db.commit()
-        db.refresh(new_log)
+        try :
+            db.add(new_log)
+            db.commit()
+            db.refresh(new_log)
+            
+            print(f"[Backend] 새로운 헬스케어 로그 적재 완료 (Log ID: {new_log.id})")
+            
+            background_tasks.add_task(
+                notify_new_diary_to_device,
+                request.user_id,
+                new_log
+            )
+            
+            return {"message": "Log successfully saved.", "log_id": new_log.id}
+        except Exception as e:
+            db.rollback()
+            print(f"[Backend Error] 로그 저장 중 DB 오류 발생: {e}")
+            raise HTTPException(status_code=500, detail="Database insertion failed.")
         
-        print(f"[Backend] 새로운 헬스케어 로그 적재 완료 (Log ID: {new_log.id})")
-        return {"message": "Log successfully saved.", "log_id": new_log.id}
-
     except Exception as e:
         db.rollback()
         print(f"[Backend Error] 로그 저장 중 DB 오류 발생: {e}")
         raise HTTPException(status_code=500, detail="Database insertion failed.")
+
+
+
+    
     
     
 # # --- 1. Pydantic 스키마 정의 ---
