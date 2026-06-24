@@ -398,10 +398,13 @@ async def handle_client(websocket, path="/"):
                     # 수신한 데이터를 즉시 우체통(Queue)에 넣어서 send_to_cloud()가 가져가게 함
                     await cloud_outbound_queue.put(data.get("payload"))
                 
-                # 3. 단순 프론트엔드 상태 변경 알림 (필요시 파이썬에서 사용)
-                else:
-                    print(f"[React 내부 상태 알림]: {data}")
-                
+                # 3. 연결 설정시 device token을 react에 전달
+                elif data.get("command") == "get_token":
+                    await websocket.send(json.dumps({"token": f"{DEVICE_TOKEN}"}))
+                    
+                    print(f"[React에 토큰 전달 완료]: {DEVICE_TOKEN}")
+                else :
+                    print(f"[ETC]")
         
         
         except websockets.exceptions.ConnectionClosed:

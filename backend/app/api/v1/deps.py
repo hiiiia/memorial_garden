@@ -52,7 +52,7 @@ def get_current_dependent_jwt(
         # JWT 토큰 디코딩
         payload = jwt.decode(
             credentials.credentials, 
-            settings.SECRET_KEY, 
+            settings.JWT_SECRET_KEY, 
             algorithms=[settings.ALGORITHM]
         )
         

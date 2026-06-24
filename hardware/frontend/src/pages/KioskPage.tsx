@@ -14,7 +14,6 @@ interface MemoryData {
 
 interface Diary {
   id: string | number;
-  title: string;
   content: string;
   image_url: string;
   created_at: string; // 예: "2026년 06월 24일"
@@ -32,6 +31,7 @@ const KioskPage: React.FC = () => {
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [aiText, setAiText] = useState<string>('안녕하세요 어르신\n오늘은 어떤 하루를\n보내셨나요?');
 
+
   // 연동 팝업 상태
   const [showPairingPopup, setShowPairingPopup] = useState<boolean>(false);
   const [pairingData, setPairingData] = useState<{ guardianName: string; mappingId: number | null }>({
@@ -48,11 +48,16 @@ const KioskPage: React.FC = () => {
 
   // 백엔드에서 일기 데이터 불러오기
   const fetchDiaries = async () => {
+
+    console.log("다이어리 데이터 get 시작")
+    
     try {
-      const token = localStorage.getItem("DEVICE_TOKEN");
+      const token = localStorage.getItem('DEVICE_TOKEN');
+      console.log("DEVICE_TOKEN =",token);
+
       if (!token) return;
 
-      const response = await fetch("http://localhost:8000/api/v1/dependent/diary", {
+      const response = await fetch("http://192.168.1.82:8000/api/v1/dependent/diary", {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -61,9 +66,15 @@ const KioskPage: React.FC = () => {
       });
       
       const resData = await response.json();
-      if (resData.status_code === 200) {
-        setDiaries(resData.data.diaries);
+
+      // 🌟 수정됨: status_code 검사를 빼고, 데이터(diaries)가 존재하는지만 확실하게 확인!
+      if (resData.data && resData.data.diaries) {
+        console.log("✅ 일기장 데이터 로드 완료:", resData.data.diaries);
+        setDiaries(resData.data.diaries); // React 상태에 일기 데이터 저장
+      } else {
+        console.warn("⚠️ 일기 데이터가 없습니다.", resData);
       }
+
     } catch (error) {
       console.error("일기장 데이터를 불러오는데 실패했습니다:", error);
     }
@@ -127,10 +138,15 @@ const KioskPage: React.FC = () => {
     const connectWebSocket = () => {
       const ws = new WebSocket('ws://localhost:8765');
 
-      ws.onopen = () => setWsConnected(true);
+      ws.onopen = () => {
+        setWsConnected(true);
+        ws.send(JSON.stringify({ command: 'get_token' }));
+      };
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+
+        console.log("🌟 [React 웹소켓 수신]:", data);
 
         // 보호자 연동 요청이 들어왔을 때 팝업 띄우기
         if (data.action === 'SHOW_PAIRING_POPUP') {
@@ -143,13 +159,10 @@ const KioskPage: React.FC = () => {
         
         // AI 오케스트레이터가 작업 완료 후 호출
         if (data.action === "NEW_DIARY_ARRIVED") {
-          // 1. 화면에 큼직한 알림 띄우기
+          // 화면에 큼직한 알림 띄우기
           setShowNotification(data.data.message);
           
-          // 2. 일기장 목록 최신화!
-          fetchDiaries();
-          
-          // 3. 5초 뒤에 알림 자동 닫기
+          // 5초 뒤에 알림 자동 닫기
           setTimeout(() => setShowNotification(null), 5000);
         }
 
@@ -169,6 +182,13 @@ const KioskPage: React.FC = () => {
         if (data.type === 'AI_RESPONSE' && data.text) {
           setAiText(data.text);
         }
+
+        if(data.token){
+          const token = String(data.token);
+          localStorage.setItem('DEVICE_TOKEN', token);
+          console.log('✅ 토큰이 안전하게 저장되었습니다.');
+        }
+
       };
 
       ws.onclose = () => {
@@ -252,18 +272,34 @@ const KioskPage: React.FC = () => {
                 <button className="menu-btn talk-btn" onClick={() => setScreen('talk')}>
                   🎤<span>이야기<br />시작하기</span>
                 </button>
+
+
+                {/* 오늘의 일기 버튼 */}
                 <button
                   className="menu-btn diary-btn"
-                  onClick={() => setScreen('diary')}
+                  onClick={async () => {
+                    // 🌟 async/await를 추가해서 순서를 강제합니다!
+                    await fetchDiaries(); // 1. 데이터가 도착할 때까지 여기서 멈춰서 기다림
+                    setScreen('diary');   // 2. 데이터가 다 도착하면 그제서야 화면을 넘김
+                  }}
                 >
                   📖<span>오늘의<br />일기</span>
                 </button>
+
+                {/* 추억 보관함 버튼 */}
                 <button
                   className="menu-btn memory-btn"
-                  onClick={() => setScreen('memory')}
+                  onClick={async () => {
+                    await fetchDiaries(); // 1. 데이터가 도착할 때까지 기다림
+                    setScreen('memory');  // 2. 다 도착하면 화면을 넘김
+                  }}
                 >
                   🖼<span>추억<br />보관함</span>
                 </button>
+
+
+
+
               </div>
             </div>
           </div>
@@ -461,14 +497,10 @@ const KioskPage: React.FC = () => {
                     
                     <div className="memory-image">
                       {memory.image_url ? (
-                        <img src={memory.image_url} alt={memory.title} />
+                        <img src={memory.image_url} />
                       ) : (
                         <span>🎨</span>
                       )}
-                    </div>
-
-                    <div className="memory-info">
-                      <h2>{memory.title}</h2>
                     </div>
 
                     <div className="memory-action-buttons">
@@ -521,11 +553,10 @@ const KioskPage: React.FC = () => {
         <div className="home-card detail-card">
           <div className="detail-top">
             <div className="detail-image-box">
-              {selectedDiary?.image_url}
+              <img src={selectedDiary?.image_url} />
             </div>
 
             <div className="detail-info">
-              <h1>{selectedDiary?.title}</h1>
               <p className="detail-date">{selectedDiary?.created_at}</p>
 
               <p className="detail-desc">
@@ -615,9 +646,10 @@ const KioskPage: React.FC = () => {
       )}
       {/* 팝업: 새 일기 도착 알림 */}
       {showNotification && (
-        <div className="fixed top-10 left-1/2 transform -translate-x-1/2 bg-orange-400 text-white px-8 py-4 rounded-full shadow-2xl text-2xl z-50 animate-bounce">
+        <div className="notification-popup">
           🔔 {showNotification}
         </div>
+
       )}
       
     </div>

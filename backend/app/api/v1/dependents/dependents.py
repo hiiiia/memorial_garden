@@ -138,7 +138,6 @@ def get_picture_diaries(
     # (주의: Memory.dependent_id 와 current_dep.id 가 매칭되는지 확인)
     diaries = db.query(Log).filter(
         Log.dependent_id == current_dep.id,
-        Log.type == "DIARY" # 만약 테이블에 다른 데이터도 섞여있다면 타입으로 필터링
     ).order_by(Log.created_at.desc()).offset(offset).limit(limit).all()
     
     # 2. React 화면에서 렌더링하기 편하도록 예쁘게 가공
@@ -146,8 +145,7 @@ def get_picture_diaries(
     for diary in diaries:
         result.append({
             "id": diary.id,
-            "title": diary.title,           # 예: "즐거운 산책"
-            "content": diary.content,       # 일기 본문 (텍스트)
+            "content": diary.diary_text,       # 일기 본문 (텍스트)
             "image_url": diary.image_url,   # AI가 생성한 이미지 주소 (S3 URL 등)
             # 날짜를 어르신이 보기 편한 문자열 형태로 변환
             "created_at": diary.created_at.strftime("%Y년 %m월 %d일") 

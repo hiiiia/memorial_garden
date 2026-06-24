@@ -135,7 +135,7 @@ async def notify_new_diary_to_device(dependent_id: str, new_diary: Log):
             "action": "NEW_DIARY_ARRIVED",
             "data": {
                 "diary_id": new_diary.id,
-                "title": new_diary.title,
+                "title": "새로운 추억이 도착했어요",
                 "message": "어르신, 방금 나누신 대화로 예쁜 그림일기가 도착했어요! 함께 보실래요?",
                 "image_url": new_diary.image_url # 팝업에 미리보기 썸네일을 띄워줄 수도 있습니다.
             }

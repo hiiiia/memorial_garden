@@ -1095,3 +1095,35 @@
 }
 
 .memory-close-btn:hover { background-color: #d1d5db; }
+
+
+/* ========================================== */
+/* 새 일기 도착 알림 팝업                        */
+/* ========================================== */
+.notification-popup {
+  position: fixed;
+  top: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #fb923c; /* 오렌지색 */
+  color: white;
+  padding: 1rem 2.5rem;
+  border-radius: 9999px;
+  font-size: 1.8rem;
+  font-weight: bold;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  z-index: 99999; /* 무조건 제일 위로! */
+  animation: bounce 1s infinite;
+}
+
+/* 둥실둥실 애니메이션 */
+@keyframes bounce {
+  0%, 100% {
+    transform: translate(-50%, -25%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  50% {
+    transform: translate(-50%, 0);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+}
