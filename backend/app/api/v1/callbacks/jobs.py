@@ -91,34 +91,84 @@ async def receive_healthcare_log(
             except Exception as img_err:
                 print(f"[Backend Error] 이미지 다운로드 실패 (원본 URL 유지): {img_err}")
                 # 실패하면 원본 URL을 그대로 유지하도록 처리
-
+                
         # 2. Log 테이블에 새 레코드 생성
         new_log = models.Log(
             dependent_id=request.user_id,
             status=request.status,
-            
             risk_score=analysis.risk_score,
             depression_score=analysis.depression_score,
             cognitive_decline_score=analysis.cognitive_decline_score,
             primary_emotion=analysis.primary_emotion,
             llm_summary=analysis.llm_summary,
-            
-            # 변환된 로컬 URL(또는 원본) 적재
             image_url=final_image_url, 
             diary_text=analysis.diary_text,
-            
             speech_rate=analysis.speech_rate,
             pause_ratio=analysis.pause_ratio,
             pitch_variance=analysis.pitch_variance
         )
         
-        try :
+        try:
             db.add(new_log)
-            db.commit()
+            db.flush()
+
+            print(f"[Backend] 새로운 헬스케어 로그 (Log ID: {new_log.id})")
+            
+            # ====================================================
+            # 🚨 위험도 평가, Alert DB 기록 및 보호자 알림 발송
+            # ====================================================
+            DANGER_THRESHOLD = 70.0
+            
+            # 1) Alert 테이블에 상태 기록 (위험하면 PENDING, 정상이면 RESOLVED)
+            trigger_type = "AI_RISK" if analysis.risk_score >= DANGER_THRESHOLD else "INFO"
+            
+            new_alert = models.Alert(
+                dependent_id=request.user_id,
+                log_id=new_log.id,
+                trigger_type=trigger_type,
+                status="RESOLVED" if trigger_type == "INFO" else "PENDING"
+            )
+            
+            db.commit() 
             db.refresh(new_log)
             
-            print(f"[Backend] 새로운 헬스케어 로그 적재 완료 (Log ID: {new_log.id})")
+            print(f"[Backend] 새로운 헬스케어 로그 및 Alert 적재 완료 (Log ID: {new_log.id})")
             
+            # 2) 위험 기준치 초과 시 외부 알림 발송
+            if analysis.risk_score >= DANGER_THRESHOLD:
+                # 연결된 보호자 조회
+                connected_mappings = db.query(models.GuardianDependentMapping).filter(
+                    models.GuardianDependentMapping.dependent_id == request.user_id,
+                    models.GuardianDependentMapping.status == "CONNECTED"
+                ).all()
+                
+                for mapping in connected_mappings:
+                    guardian_obj = mapping.guardian
+                    # 어르신 이름 가져오기 (관계 매핑에 dependent가 연결되어 있다고 가정)
+                    target_name = mapping.dependent.name if hasattr(mapping, 'dependent') and mapping.dependent else "어르신"
+                    
+                    print(f"[Alert] 위험 감지! {guardian_obj.name} 보호자에게 알림 발송 예약.")
+                    
+                    # 🌟 응답 지연이 없도록 FastAPI background_tasks로 외부 통신 넘기기
+                    background_tasks.add_task(
+                        send_emergency_alert,
+                        risk_score=analysis.risk_score,
+                        summary=analysis.llm_summary,
+                        text=analysis.diary_text, # 레거시의 stt_text 대신 현재 사용중인 diary_text로 교체
+                        dependent_name=target_name,
+                        guardian_phone=guardian_obj.phone,
+                        guardian_name=guardian_obj.name
+                    )
+                    background_tasks.add_task(
+                        send_kakao_alert,
+                        guardian=guardian_obj,
+                        dependent_name=target_name,
+                        risk_score=analysis.risk_score,
+                        summary=analysis.llm_summary
+                    )
+            # ====================================================
+
+            # 기존: 어르신 기기(프론트엔드)로 새 일기 도착 웹소켓 알림
             background_tasks.add_task(
                 notify_new_diary_to_device,
                 request.user_id,
@@ -126,11 +176,12 @@ async def receive_healthcare_log(
             )
             
             return {"message": "Log successfully saved.", "log_id": new_log.id}
+            
         except Exception as e:
             db.rollback()
             print(f"[Backend Error] 로그 저장 중 DB 오류 발생: {e}")
             raise HTTPException(status_code=500, detail="Database insertion failed.")
-        
+
     except Exception as e:
         db.rollback()
         print(f"[Backend Error] 로그 저장 중 DB 오류 발생: {e}")

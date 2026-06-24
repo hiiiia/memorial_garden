@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from db.database import get_db
 from db.models import GuardianDependentMapping, Dependent, Log
+from db import models
 
 from api.v1.deps import get_current_dependent_jwt 
 from api.v1.utils.security import get_password_hash
 from api.v1.utils.jwt import create_access_token
 from api.v1.deps import validate_hw_key
 from core.response import unified_response
+from api.v1.utils.notifier import send_emergency_alert, send_kakao_alert
 import uuid
 
 # 연동 수락/거절 요청 스키마
@@ -22,6 +24,9 @@ class DeviceRegisterRequest(BaseModel):
     username: str
     name: str
     age: int
+
+class EmergencyRequest(BaseModel):
+    mac_address: str
     
 router = APIRouter()
 
@@ -69,7 +74,68 @@ router = APIRouter()
 #     else:
 #         return unified_response(status_code=400, error="잘못된 작업(action) 값입니다. 'accept' 또는 'reject'를 사용하세요.")
     
+@router.post("/emergency")
+def alert_emergency(
+    request: EmergencyRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    하드웨어 전용 긴급 호출 API (인증 X)
+    MAC 주소를 받아 연결된 보호자들에게 즉시 긴급 알림을 발송합니다.
+    """
+    mac_address = request.mac_address
+    print(f"[Emergency] 🚨 기기(MAC: {mac_address})에서 긴급 호출 발생!")
+
+    # 2. MAC 주소(dependent_id)와 연결된(CONNECTED) 보호자 매핑 목록 조회
+    connected_mappings = db.query(models.GuardianDependentMapping).filter(
+        models.GuardianDependentMapping.dependent_id == mac_address,
+        models.GuardianDependentMapping.status == "CONNECTED"
+    ).all()
+
+    if not connected_mappings:
+        print(f"[Emergency Warning] 매핑된 보호자가 없습니다. (MAC: {mac_address})")
+        # 보호자가 없더라도 HW 기기에는 에러를 뱉지 않고 200 OK를 주어 시스템이 멈추지 않게 합니다.
+        return {"status": "success", "message": "No connected guardians found."}
+
+    # 3. 어르신 이름 가져오기 (알림 발송용)
+    # 매핑 데이터 중 첫 번째 레코드에서 dependent 객체를 꺼냅니다.
+    first_mapping = connected_mappings[0]
+    target_name = first_mapping.dependent.name if hasattr(first_mapping, 'dependent') and first_mapping.dependent else "어르신"
+
+    # 4. 각 보호자에게 백그라운드로 긴급 알림 발송
+    for mapping in connected_mappings:
+        guardian_obj = mapping.guardian
+        if not guardian_obj:
+            continue
+
+        print(f"[Alert 발송] {guardian_obj.name} 보호자에게 긴급 알림을 예약합니다.")
+
+        # 하드웨어 호출이므로 위험도는 무조건 최고치(100)로 설정하고, 기본 메시지를 세팅합니다.
+        risk_score = 100.0
+        summary = "기기에서 긴급 호출(SOS)이 발생했습니다!"
+        emergency_text = "어르신 기기의 긴급 버튼이 눌렸습니다. 즉시 확인해 주세요."
+
+        background_tasks.add_task(
+            send_emergency_alert,
+            risk_score=risk_score,
+            summary=summary,
+            text=emergency_text, 
+            dependent_name=target_name,
+            guardian_phone=guardian_obj.phone,
+            guardian_name=guardian_obj.name
+        )
+        background_tasks.add_task(
+            send_kakao_alert,
+            guardian=guardian_obj,
+            dependent_name=target_name,
+            risk_score=risk_score,
+            summary=summary
+        )
+
+    return {"status": "success", "message": "Emergency alerts dispatched successfully."}
     
+
 @router.post("/device/register")
 def register_device(request: DeviceRegisterRequest, db: Session = Depends(get_db), _ = Depends(validate_hw_key)):
     """엣지 디바이스 부팅 시 DEVICE_HW_KEY 검증

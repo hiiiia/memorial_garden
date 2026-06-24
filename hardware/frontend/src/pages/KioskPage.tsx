@@ -185,7 +185,9 @@ const KioskPage: React.FC = () => {
 
         if(data.token){
           const token = String(data.token);
+          const hw_mac = String(data.HW_MAC);
           localStorage.setItem('DEVICE_TOKEN', token);
+          localStorage.setItem('HW_MAC', hw_mac);
           console.log('✅ 토큰이 안전하게 저장되었습니다.');
         }
 
@@ -242,6 +244,45 @@ const KioskPage: React.FC = () => {
   };
 
 
+  // 🚨 긴급 도움 요청 함수
+  const handleEmergencyRequest = async () => {
+    // 1. 로컬 스토리지에서 HW_MAC 주소 꺼내기
+    const macAddress = localStorage.getItem('HW_MAC');
+
+    if (!macAddress) {
+      console.error("🚨 기기 MAC 주소를 찾을 수 없습니다. (HW_MAC 확인 필요)");
+      alert("기기 정보가 없습니다. 관리자에게 문의하세요."); // 에러 방지용
+      return;
+    }
+
+    try {
+      console.log(`[Emergency] 🚨 긴급 호출 시도 중... (MAC: ${macAddress})`);
+
+      // 2. 백엔드로 POST 요청 보내기 (인증 토큰 없음)
+      const response = await fetch("http://192.168.1.82:8000/api/v1/dependent/emergency", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          mac_address: macAddress
+        })
+      });
+
+      const resData = await response.json();
+      
+      // 3. 결과 처리
+      if (response.ok) {
+        console.log("✅ 긴급 호출 성공:", resData);
+        // 🌟 어르신이 안심할 수 있도록 화면에 팝업을 띄워주는 것이 좋습니다!
+        // setShowNotification("보호자에게 긴급 알림을 전송했습니다."); 
+      } else {
+        console.error("🚨 긴급 호출 실패:", resData);
+      }
+    } catch (error) {
+      console.error("🚨 서버 통신 오류 (긴급 호출):", error);
+    }
+  };
 
 
   // ⏳ 현재 에이전트 상태에 따른 하단 안내 문구 변환
@@ -266,9 +307,13 @@ const KioskPage: React.FC = () => {
               <p className="sub-text">오늘도 좋은 하루 보내세요 😊</p>
 
               <div className="button-group">
-                <button className="menu-btn help-btn">
-                  ☎<span>도움<br />요청하기</span>
-                </button>
+              <button 
+                className="menu-btn help-btn"
+                onClick={handleEmergencyRequest} 
+              >
+                ☎<span>도움<br />요청하기</span>
+              </button>
+
                 <button className="menu-btn talk-btn" onClick={() => setScreen('talk')}>
                   🎤<span>이야기<br />시작하기</span>
                 </button>
