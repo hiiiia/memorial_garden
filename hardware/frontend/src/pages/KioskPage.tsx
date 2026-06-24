@@ -274,8 +274,8 @@ const KioskPage: React.FC = () => {
       // 3. 결과 처리
       if (response.ok) {
         console.log("✅ 긴급 호출 성공:", resData);
-        // 🌟 어르신이 안심할 수 있도록 화면에 팝업을 띄워주는 것이 좋습니다!
-        // setShowNotification("보호자에게 긴급 알림을 전송했습니다."); 
+        //  어르신이 안심할 수 있도록 화면에 팝업을 띄워주는 것이 좋습니다!
+        setShowNotification("보호자에게 긴급 알림을 전송했습니다."); 
       } else {
         console.error("🚨 긴급 호출 실패:", resData);
       }
