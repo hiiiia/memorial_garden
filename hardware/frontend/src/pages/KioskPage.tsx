@@ -521,21 +521,17 @@ const KioskPage: React.FC = () => {
         <div className="home-card detail-card">
           <div className="detail-top">
             <div className="detail-image-box">
-              {selectedMemory?.image}
+              {selectedDiary?.image_url}
             </div>
 
             <div className="detail-info">
-              <h1>{selectedMemory?.title}</h1>
-              <p className="detail-date">{selectedMemory?.date}</p>
+              <h1>{selectedDiary?.title}</h1>
+              <p className="detail-date">{selectedDiary?.created_at}</p>
 
               <p className="detail-desc">
-                {selectedMemory?.desc.map((line: string, index: number) => (
-                  <React.Fragment key={index}>
-                    {line}
-                    <br />
-                  </React.Fragment>
-                ))}
+                {selectedDiary?.content}
               </p>
+              
             </div>
           </div>
 
