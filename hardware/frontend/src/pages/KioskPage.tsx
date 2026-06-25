@@ -31,6 +31,10 @@ const KioskPage: React.FC = () => {
   const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [aiText, setAiText] = useState<string>('안녕하세요 어르신\n오늘은 어떤 하루를\n보내셨나요?');
 
+  // 주기적 안부 묻기 on/off 상태 
+  const [isGreetingEnabled, setIsGreetingEnabled] = useState<boolean>(true);
+  // 안부 데이터 변수
+  const [greetingData, setGreetingData] = useState<{text: string, audio_url: string} | null>(null);
 
   // 연동 팝업 상태
   const [showPairingPopup, setShowPairingPopup] = useState<boolean>(false);
@@ -190,6 +194,30 @@ const KioskPage: React.FC = () => {
           localStorage.setItem('HW_MAC', hw_mac);
           console.log('✅ 토큰이 안전하게 저장되었습니다.');
         }
+
+        if (data.action === 'INIT_SETTINGS') {
+          console.log("⚙️ 기기 초기 설정값 로드 완료:", data.data);
+          setIsGreetingEnabled(data.data.proactive_greeting_enabled);
+        }
+
+        if (data.action === 'PROACTIVE_GREETING_ARRIVED') {
+              console.log("💌 [WS] 안부 메시지 도착:", data.data);
+              
+              // 1. 화면에 팝업 띄우기
+              setGreetingData({
+                text: data.data.text,
+                audio_url: data.data.audio_url
+              });
+
+              // 2. 오디오 자동 재생 시도
+              if (data.data.audio_url) {
+                const audio = new Audio(data.data.audio_url);
+                audio.play().catch(error => {
+                  console.warn("🔇 브라우저 자동 재생 정책으로 인해 소리가 차단되었습니다:", error);
+                  // (주의: 브라우저는 사용자가 화면을 한 번이라도 클릭/터치해야 자동 재생을 허용합니다)
+                });
+              }
+            }
 
       };
 
@@ -697,6 +725,50 @@ const KioskPage: React.FC = () => {
 
       )}
       
+      {/* ========================================== */}
+      {/* 안부 묻기 팝업 UI                       */}
+      {/* ========================================== */}
+      {greetingData && (
+        <div className="notification-popup greeting-popup">
+          <div className="popup-content greeting-content">
+            <h2 className="greeting-title">💌 어르신, 안녕하세요!</h2>
+            
+            <p className="greeting-text">
+              {greetingData.text}
+            </p>
+
+            <div className="greeting-buttons">
+              <button 
+                className="greeting-btn btn-listen"
+                onClick={() => {
+                  const audio = new Audio(greetingData.audio_url);
+                  audio.play();
+                }}
+              >
+                🔊 다시 듣기
+              </button>
+              
+              <button 
+                className="greeting-btn btn-chat"
+                onClick={() => {
+                  setGreetingData(null); // 팝업 닫기
+                  setScreen('send');     // 일기 작성 화면으로 바로 넘기기
+                }}
+              >
+                ✍️ 대화 나누기
+              </button>
+
+              <button 
+                className="greeting-btn btn-close"
+                onClick={() => setGreetingData(null)}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

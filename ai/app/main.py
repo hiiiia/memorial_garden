@@ -33,13 +33,16 @@ LLM_MODEL = "gemma4:12b"           # 무거운 심층 분석용
 LIGHT_LLM_MODEL = "qwen2.5:3b"     # 엣지 실시간 라우팅용
 
 # ==========================================
-# 2. 데이터 스키마 및 보안 의존성 정의
+# 2. 데이터 스키마
 # ==========================================
 class EdgeRouteRequest(BaseModel):
     user_id: str 
     text: str
     memory_context: str
 
+class GreetingRequest(BaseModel):
+    name: str
+    time_context: str
 # ==========================================
 # 3. 유틸리티 및 오디오 분석 함수
 # ==========================================
@@ -310,3 +313,59 @@ async def process_edge_routing(request: EdgeRouteRequest, _ = Depends(validate_a
         }
 
     return routing_data
+
+
+
+@app.post("/api/v1/generate-greeting")
+async def generate_greeting(
+    request: GreetingRequest, 
+    _ = Depends(validate_ai_secret_token)
+):
+    print(f"🧠 [AI Server] {request.name} 어르신을 위한 {request.time_context} 프롬프트 생성 중...")
+
+    # System Prompt: JSON 포맷 강제 및 페르소나 부여
+    system_prompt = """
+    You are a helpful assistant. Output only valid JSON.
+    당신은 독거 어르신에게 다정하고 친근하게 말을 거는 손주 같은 인공지능 로봇입니다.
+    반드시 "greeting_text"라는 키를 가진 JSON 객체로만 응답하세요.
+    """
+
+    # User Prompt: 구체적인 상황 정보 및 지침 전달
+    user_prompt = f"""
+    어르신의 이름은 '{request.name}'입니다.
+    지금 시간대는 {request.time_context}입니다.
+
+    [지침]
+    1. 어르신에게 존댓말을 사용하고, 아주 다정하고 살갑게 말해주세요.
+    2. 현재 시간대({request.time_context})에 맞는 자연스러운 날씨나 식사 관련 안부를 포함해주세요.
+    3. 너무 길지 않게 2~3문장으로 간결하게 작성해주세요.
+    4. 어르신이 대답하기 쉽도록 가벼운 질문으로 마무리해주세요.
+    5. "로봇입니다", "무엇을 도와드릴까요" 같은 기계적인 표현은 절대 금지합니다.
+    """
+
+    try:
+        response = await client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        # JSON 파싱
+        analysis_result = json.loads(response.choices[0].message.content)
+        
+        # 'greeting_text' 키 값 추출
+        greeting_text = analysis_result.get("greeting_text", "")
+        
+        print(f"[AI Server] LLM 안부 메시지 생성 완료: {greeting_text}")
+        
+        return {"greeting_text": greeting_text}
+        
+    except Exception as e:
+        print(f"🚨 [AI Server] LLM 통신 또는 JSON 파싱 실패: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate greeting via GX10")
+    
+    
+    

@@ -50,6 +50,7 @@ class Dependent(Base):
     alerts = relationship("Alert", back_populates="dependent")
     fast_chats = relationship("FastChat", back_populates="dependent")
     
+    device_setting = relationship("DeviceSetting", back_populates="dependent", uselist=False, cascade="all, delete-orphan")
 # 연동 수락/대기 상태를 관리하는 매핑 테이블
 class GuardianDependentMapping(Base):
     __tablename__ = "guardian_dependent_mappings"
@@ -65,6 +66,26 @@ class GuardianDependentMapping(Base):
 
     guardian = relationship("Guardian", back_populates="dependent_links")
     dependent = relationship("Dependent", back_populates="guardian_links")
+
+class DeviceSetting(Base):
+    __tablename__ = "device_settings"
+
+    id = Column(String(50), primary_key=True, index=True, default=generate_uuid)
+    # 어르신 1명당 1개의 설정을 가지므로 unique=True 부여
+    dependent_id = Column(String(50), ForeignKey("dependents.id", ondelete="CASCADE"), unique=True, nullable=False)
+    
+    # 기능 1: 선제적 안부 묻기 활성화 여부 (기본값: 켜짐)
+    proactive_greeting_enabled = Column(Boolean, default=True, nullable=False)
+    
+    # (나중에 이런 식으로 추가 가능합니다)
+    # volume_level = Column(Integer, default=80) 
+    # do_not_disturb_start = Column(String(5), nullable=True) # "22:00"
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # 관계 설정
+    dependent = relationship("Dependent", back_populates="device_setting")
 
 class FastChat(Base):
     __tablename__ = "fast_chats"

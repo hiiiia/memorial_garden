@@ -1,14 +1,13 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, status
 import json
 from db.database import SessionLocal 
-from db.models import GuardianDependentMapping, Log
+from db.models import GuardianDependentMapping, Log, DeviceSetting
 from api.v1.ws.websocket_manager import device_ws_manager
 from api.v1.deps import verify_hw_jwt_token
 ws_router = APIRouter()
 
 @ws_router.websocket("/device/{dependent_id}")
 async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
-    
     
     # 1. 헤더에서 토큰 추출
     auth_header = websocket.headers.get("Authorization")
@@ -32,24 +31,39 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     
-    
     # 기기 연결 수락 및 매니저 등록
     await device_ws_manager.connect(dependent_id, websocket)
     
     # ==============================================================
-    # 기기가 막 연결되었을 때, 혹시 밀린 연동 요청(PENDING)이 있는지 검사
+    # 기기가 연결되었을 때 초기화 작업 (밀린 요청 검사 및 초기 설정값 전송)
     # ==============================================================
     db = SessionLocal()
     try:
-        # 이 어르신에게 온 PENDING 상태의 연동 요청 조회
+        # --- [추가됨] 1. 기기 설정 조회 및 전송 ---
+        setting = db.query(DeviceSetting).filter(DeviceSetting.dependent_id == dependent_id).first()
+        if not setting:
+            # 설정이 없다면 기본값으로 생성
+            setting = DeviceSetting(dependent_id=dependent_id)
+            db.add(setting)
+            db.commit()
+            db.refresh(setting)
+
+        settings_payload = {
+            "action": "INIT_SETTINGS",
+            "data": {
+                "proactive_greeting_enabled": setting.proactive_greeting_enabled
+            }
+        }
+        await websocket.send_text(json.dumps(settings_payload))
+        print(f"⚙️ [WS] 초기 기기 설정값 전송 완료: {dependent_id}")
+        
+        # --- [기존] 2. 밀린 연동 요청(PENDING) 팝업 전송 ---
         pending_requests = db.query(GuardianDependentMapping).filter(
             GuardianDependentMapping.dependent_id == dependent_id,
             GuardianDependentMapping.status == "PENDING"
         ).all()
         
         for req in pending_requests:
-            # 밀린 요청이 있다면, 연결되자마자 바로 팝업 명령 발송!
-            # (주의: req.guardian.name 은 DB 관계 설정에 따라 다를 수 있습니다)
             guardian_name = req.guardian.name if req.guardian else "가족" 
             
             payload = {
@@ -64,7 +78,8 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
             print(f"📦 [WS] 오프라인 때 밀렸던 팝업 전송 완료: {dependent_id}")
             
     except Exception as e:
-        print(f"🚨 밀린 요청 검사 중 오류: {e}")
+        print(f"🚨 기기 초기화(설정/밀린 요청 검사) 중 오류: {e}")
+        db.rollback() # 에러 발생 시 롤백 추가
     finally:
         db.close()
     # ==============================================================
