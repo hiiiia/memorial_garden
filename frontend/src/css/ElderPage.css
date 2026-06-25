@@ -167,6 +167,52 @@
   border: 2px solid #cfcfcf;
 }
 
+.talk-main-btn:disabled,
+.talk-close-btn:disabled,
+.stop-btn:disabled,
+.diary-listen-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hardware-status-panel {
+  width: 100%;
+  max-width: 1100px;
+  min-height: 130px;
+  margin: 40px auto 0;
+  padding: 24px 36px;
+  border-radius: 28px;
+  background: #eef7e3;
+  border: 3px solid #c9dda9;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.hardware-status-panel.error {
+  background: #fff0ed;
+  border-color: #ef9a8b;
+}
+
+.hardware-status-text {
+  margin: 0;
+  font-size: 44px;
+  font-weight: 900;
+  color: #26351d;
+}
+
+.hardware-status-detail {
+  margin: 14px 0 0;
+  font-size: 24px;
+  line-height: 1.35;
+  color: #7a3b31;
+  word-break: keep-all;
+}
+
+.retry-btn {
+  color: #7a3b31;
+  border-color: #ef9a8b;
+}
+
 .ai-card {
   display: flex;
   flex-direction: column;
@@ -207,9 +253,79 @@
   letter-spacing: 8px;
 }
 
+.voice-state-error .voice-wave,
+.voice-state-idle .voice-wave {
+  color: #d3d3d3;
+}
+
+.voice-state-stopping .voice-wave,
+.voice-state-playing .voice-wave {
+  color: #6da9d8;
+}
+
 .listening-text {
-  color: #aaa;
+  color: #555;
+  font-size: 42px;
+  font-weight: 900;
+  margin: 20px 0 0;
+}
+
+.recording-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 46px;
+  padding: 16px 30px;
+  border-radius: 999px;
+  background: #f1f1f1;
+  color: #555;
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.recording-indicator.active {
+  background: #fff0ed;
+  color: #c6412d;
+}
+
+.recording-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #aaa;
+}
+
+.recording-indicator.active .recording-dot {
+  background: #e33d2f;
+  box-shadow: 0 0 0 8px rgba(227, 61, 47, 0.14);
+}
+
+.recording-path-text {
+  max-width: 1300px;
+  margin: 18px 0 0;
+  color: #777;
   font-size: 24px;
+  word-break: break-all;
+  text-align: center;
+}
+
+.ai-error-detail {
+  max-width: 1100px;
+  text-align: center;
+}
+
+.ai-home-btn {
+  margin-top: 26px;
+  width: 480px;
+  height: 110px;
+  background: white;
+  color: #222;
+  border: 3px solid #aaa;
+  border-radius: 24px;
+  font-size: 52px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .stop-btn {
@@ -284,6 +400,14 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+.recording-summary {
+  display: block;
+  margin-top: 20px;
+  color: #3e6f21;
+  font-size: 34px;
+  line-height: 1.3;
 }
 
 .diary-buttons {
