@@ -1,22 +1,43 @@
-# 기억정원 Raspberry Pi 5 하드웨어 API
+# 기억정원 Raspberry Pi 5 오디오 제어 구조
 
-이 서비스는 Raspberry Pi OS 호스트에서 직접 실행되는 FastAPI 서버입니다. 기존 Docker 기반 `hardware/agent`, backend, frontend, ai 서비스와 독립적으로 동작하며 Docker Compose에는 포함되지 않습니다.
+이 디렉터리는 Raspberry Pi OS 호스트에서 직접 I2S 마이크·스피커를 제어하는 공용 오디오 모듈과, 이를 진단용 REST API로 감싼 FastAPI 서버를 포함합니다.
+
+실제 사용자 화면(`/elder`)은 FastAPI 8002가 아니라 기존 WebSocket agent를 사용합니다.
+
+```text
+React 사용자 화면 /elder
+→ ws://127.0.0.1:8765
+→ {"command":"force_record"}
+→ hardware.agent.main
+→ hardware.host_service.audio_controller.AudioController
+→ arecord / aplay
+→ INMP441 마이크 / MAX98357A 스피커
+```
+
+실제 `arecord`/`aplay` 제어는 한 곳, `hardware/host_service/audio_controller.py`의 `AudioController`만 담당합니다. `hardware/agent`는 WebSocket, 백엔드 인증, AI 요청, 업로드 큐 역할을 유지하면서 Pi 호스트 실행 모드에서 이 컨트롤러를 import해 사용합니다.
+
+중요: `hardware.agent` 호스트 실행 모드와 `hardware.host_service.main` FastAPI 진단 모드는 같은 ALSA 장치를 점유할 수 있으므로 동시에 실행하지 않습니다.
 
 ## 구성
 
 ```text
 hardware/
+├── __init__.py
 ├── README_hardware.md
+├── agent/
+│   ├── main.py             # python3 -m hardware.agent.main 진입점
+│   └── src/main.py         # WebSocket/백엔드/AI 라우팅 agent
 └── host_service/
-    ├── main.py              # FastAPI 엔드포인트와 CORS/서버 설정
-    ├── audio_controller.py  # ALSA 탐색 및 arecord/aplay 프로세스 제어
+    ├── __init__.py          # AudioController 공개 export
+    ├── main.py              # FastAPI 진단용 REST 래퍼
+    ├── audio_controller.py  # ALSA 탐색 및 arecord/aplay 공용 제어 모듈
     ├── requirements.txt
     ├── .env.example
     ├── recordings/          # 실행 시 자동 생성되는 녹음 폴더
     └── audio/               # 재생을 허용할 정적 WAV 폴더(선택)
 ```
 
-`gpio_controller.py`는 이번 서비스에서 사용하지 않습니다. 물리 GPIO 버튼 대신 추후 React 화면이 이 HTTP API를 호출하도록 연결합니다.
+`gpio_controller.py`는 이번 오디오 리팩터링에서 사용하지 않습니다. 물리 GPIO 버튼 대신 React 화면 또는 WebSocket `force_record` 이벤트가 agent로 들어오는 구조를 사용합니다.
 
 ## Raspberry Pi 준비
 
@@ -29,33 +50,80 @@ sudo usermod -aG audio "$USER"
 `audio` 그룹 추가 후에는 로그아웃/로그인이 필요할 수 있습니다.
 
 ```bash
-cd ~/memorial_garden/hardware/host_service
+cd ~/memorial_garden
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
-cp .env.example .env
+pip install -r hardware/host_service/requirements.txt
+pip install -r hardware/agent/requirements.txt
+cp hardware/host_service/.env.example .env
 ```
 
-## 실행
+## 실행 모드
 
-요구되는 기본 실행 명령은 다음과 같습니다.
+### 1) WebSocket agent 호스트 모드
 
 ```bash
-cd ~/memorial_garden/hardware/host_service
-uvicorn main:app --host 0.0.0.0 --port 8002
+cd ~/memorial_garden
+export HARDWARE_RUNTIME_MODE=host
+python3 -m hardware.agent.main
 ```
 
-`.env`의 `HARDWARE_PORT`를 사용하려면 다음처럼 직접 실행할 수도 있습니다.
+이 모드가 실제 서비스 모드입니다. agent는 WebSocket 8765, 백엔드 인증, AI 요청, 업로드 큐를 담당하고, 녹음 시작/종료 및 파일 재생만 `AudioController`에 위임합니다.
+
+React `/elder` 화면은 다음 메시지를 사용합니다.
+
+```json
+{ "command": "force_record" }
+```
+
+agent는 상황에 따라 다음 상태를 반환합니다.
+
+```json
+{ "status": "listening" }
+{ "status": "processing" }
+{ "status": "speaking", "type": "AI_RESPONSE", "text": "..." }
+{ "status": "idle" }
+{ "status": "error", "message": "짧은 오류 문구" }
+```
+
+### 2) FastAPI 단독 진단 모드
 
 ```bash
-python3 main.py
+cd ~/memorial_garden
+uvicorn hardware.host_service.main:app --host 0.0.0.0 --port 8002
 ```
+
+`.env`의 `HARDWARE_PORT`를 사용하려면 다음처럼 실행할 수 있습니다.
+
+```bash
+cd ~/memorial_garden
+python3 -m hardware.host_service.main
+```
+
+이 모드는 curl로 장치 탐지, 녹음, 재생 API를 직접 점검하기 위한 진단용입니다. 실제 사용자 화면은 이 8002 REST API를 사용하지 않습니다. agent 호스트 모드와 동시에 실행하지 않습니다.
+
+### 3) Docker agent 모드
+
+기존 Docker Compose의 `hardware/agent` 컨테이너 실행 경로는 유지됩니다. 단, Docker agent는 기본적으로 `HARDWARE_RUNTIME_MODE=docker` 안전 모드로 간주하며 실제 Pi I2S 오디오 제어를 직접 수행하지 않습니다. 실제 오디오 제어가 필요하면 Raspberry Pi OS 호스트에서 위의 agent 호스트 모드로 실행하세요.
+
+Docker 컨테이너 안에서 억지로 `arecord`/`aplay`를 호출하지 않기 위해, docker 모드의 `force_record` 요청은 명확한 오류 메시지를 반환합니다.
+
+## 테스트
 
 오디오 장치 없이 실행 가능한 단위 테스트는 다음과 같습니다.
 
 ```bash
-python3 -m unittest discover -s tests -v
+cd ~/memorial_garden
+python3 -m unittest discover -s hardware/host_service/tests -v
+python3 -m unittest discover -s hardware/agent/tests -v
+```
+
+전체 Python 문법 검사는 다음처럼 실행합니다.
+
+```bash
+cd ~/memorial_garden
+python3 -m compileall -q hardware/host_service hardware/agent
 ```
 
 ## API 사용 예시
@@ -136,7 +204,8 @@ aplay -D plughw:2,0 test.wav
 | `AUDIO_CAPTURE_DEVICE` | 비어 있음 | 캡처 장치 강제 지정 |
 | `AUDIO_PLAYBACK_DEVICE` | 비어 있음 | 재생 장치 강제 지정 |
 | `AUDIO_RECORDINGS_DIR` | `host_service/recordings` | 녹음 저장 폴더 |
-| `HARDWARE_PORT` | `8002` | `python3 main.py` 실행 포트 |
+| `HARDWARE_PORT` | `8002` | `python3 -m hardware.host_service.main` 실행 포트 |
+| `HARDWARE_RUNTIME_MODE` | `docker` | `hardware.agent` 실행 모드. 실제 오디오 제어는 `host`에서만 활성화 |
 | `HARDWARE_CORS_ORIGINS` | localhost 개발 origin 목록 | 쉼표로 구분한 허용 origin |
 | `HARDWARE_LOG_LEVEL` | `INFO` | Python 로그 레벨 |
 

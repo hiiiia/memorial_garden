@@ -11,10 +11,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-SERVICE_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SERVICE_DIR))
+REPO_DIR = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_DIR))
 
-from audio_controller import (
+from hardware.host_service import (
     AlsaDeviceInfo,
     AlsaDeviceResolver,
     AudioConflictError,
@@ -143,6 +143,11 @@ class AlsaDetectionTests(unittest.TestCase):
         self.assertEqual(capture.device, "hw:CARD=capture,DEV=0")
         self.assertEqual(playback.device, "plughw:CARD=playback,DEV=0")
 
+    def test_audio_controller_package_import_is_available(self):
+        from hardware.host_service.audio_controller import AudioController as ImportedController
+
+        self.assertIs(ImportedController, AudioController)
+
 
 class AudioControllerTests(unittest.TestCase):
     def test_missing_alsa_keeps_service_degraded_with_error_state(self):
@@ -165,7 +170,7 @@ class AudioControllerTests(unittest.TestCase):
             return process
 
         with tempfile.TemporaryDirectory() as temp_dir, patch(
-            "audio_controller.shutil.which", return_value="/usr/bin/arecord"
+            "hardware.host_service.audio_controller.shutil.which", return_value="/usr/bin/arecord"
         ):
             controller = AudioController(
                 resolver=StaticResolver(),
@@ -173,6 +178,8 @@ class AudioControllerTests(unittest.TestCase):
                 audio_dir=Path(temp_dir) / "audio",
                 popen_factory=process_factory,
             )
+            refreshed = controller.refresh_devices()
+            self.assertEqual(refreshed["capture"]["device"], "plughw:7,0")
 
             started = controller.start_recording()
             self.assertEqual(started["status"], "recording")
@@ -184,7 +191,7 @@ class AudioControllerTests(unittest.TestCase):
             self.assertEqual(stopped["status"], "idle")
             self.assertGreater(stopped["size_bytes"], 44)
             self.assertEqual(stopped["duration_seconds"], 0.1)
-            self.assertEqual(controller.status()["state"], "idle")
+            self.assertEqual(controller.get_status()["state"], "idle")
 
             command = processes[0].command
             self.assertEqual(command[:3], ["arecord", "-D", "plughw:7,0"])
@@ -217,7 +224,7 @@ class AudioControllerTests(unittest.TestCase):
             return process
 
         with tempfile.TemporaryDirectory() as temp_dir, patch(
-            "audio_controller.shutil.which", return_value="/usr/bin/aplay"
+            "hardware.host_service.audio_controller.shutil.which", return_value="/usr/bin/aplay"
         ):
             controller = AudioController(
                 resolver=StaticResolver(),
@@ -231,17 +238,17 @@ class AudioControllerTests(unittest.TestCase):
 
             first_result = controller.play(str(first_file))
             self.assertEqual(first_result["status"], "playing")
-            self.assertEqual(controller.status()["state"], "playing")
+            self.assertEqual(controller.get_status()["state"], "playing")
 
-            second_result = controller.play(str(second_file))
+            second_result = controller.play_file(str(second_file))
             self.assertEqual(second_result["replaced_file_path"], str(first_file))
             self.assertTrue(processes[0].finished.is_set())
-            self.assertEqual(controller.status()["playback_file_path"], str(second_file))
+            self.assertEqual(controller.get_status()["playback_file_path"], str(second_file))
 
             stopped = controller.stop_playback()
             self.assertEqual(stopped["status"], "idle")
             self.assertTrue(processes[1].finished.is_set())
-            self.assertEqual(controller.status()["state"], "idle")
+            self.assertEqual(controller.get_status()["state"], "idle")
 
     def test_playback_returns_to_idle_after_natural_completion(self):
         processes = []
@@ -252,7 +259,7 @@ class AudioControllerTests(unittest.TestCase):
             return process
 
         with tempfile.TemporaryDirectory() as temp_dir, patch(
-            "audio_controller.shutil.which", return_value="/usr/bin/aplay"
+            "hardware.host_service.audio_controller.shutil.which", return_value="/usr/bin/aplay"
         ):
             controller = AudioController(
                 resolver=StaticResolver(),
@@ -266,12 +273,12 @@ class AudioControllerTests(unittest.TestCase):
             processes[0].returncode = 0
             processes[0].finished.set()
             for _ in range(50):
-                if controller.status()["state"] == "idle":
+                if controller.get_status()["state"] == "idle":
                     break
                 time.sleep(0.01)
 
-            self.assertEqual(controller.status()["state"], "idle")
-            self.assertIsNone(controller.status()["playback_file_path"])
+            self.assertEqual(controller.get_status()["state"], "idle")
+            self.assertIsNone(controller.get_status()["playback_file_path"])
 
     def test_recordings_are_sorted_by_mtime(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -289,6 +296,28 @@ class AudioControllerTests(unittest.TestCase):
             recordings = controller.list_recordings(limit=1)
             self.assertEqual(len(recordings), 1)
             self.assertEqual(recordings[0]["file_name"], "second.wav")
+
+
+class FastApiWrapperTests(unittest.TestCase):
+    def test_rest_routes_are_registered_when_fastapi_is_available(self):
+        try:
+            from hardware.host_service import main as rest_main
+        except ModuleNotFoundError as error:
+            if error.name in {"fastapi", "dotenv", "pydantic"}:
+                self.skipTest(f"FastAPI REST dependency is not installed: {error.name}")
+            raise
+
+        route_paths = {route.path for route in rest_main.app.routes}
+        expected_paths = {
+            "/health",
+            "/hardware/status",
+            "/hardware/record/start",
+            "/hardware/record/stop",
+            "/hardware/audio/play",
+            "/hardware/audio/stop",
+            "/hardware/recordings",
+        }
+        self.assertTrue(expected_paths.issubset(route_paths))
 
 
 if __name__ == "__main__":

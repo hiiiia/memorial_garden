@@ -2,42 +2,111 @@ import asyncio
 import websockets
 import json
 import aiohttp
-import uuid
 import os
 import time
-from config import settings
-from database import db_manager 
-import sounddevice as sd
-import soundfile as sf
-import numpy as np
-import shutil
+from typing import Any, Protocol
+
+try:
+    from .config import settings
+    from .database import db_manager
+except ImportError:
+    from config import settings
+    from database import db_manager
 
 
-TEST_MODE = True 
-TEST_INPUT_FILE = "test_1.mp3"  # 실제 테스트용 파일 경로 (미리 준비 필요)
-TEST_INPUT_TEXT = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. 옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구"
+class AgentAudioError(RuntimeError):
+    """Agent에서 오디오 제어를 수행할 수 없을 때 사용하는 예외입니다."""
 
-### 도커 환경에서는 계속 변경됨.
-# # ==========================================
-# # 기기의 고유 MAC 주소를 가져오는 함수
-# # ==========================================
-# def get_mac_address():
-#     mac_num = hex(uuid.getnode()).replace('0x', '').upper()
-#     mac = '-'.join(mac_num[i: i + 2] for i in range(0, 11, 2))
-#     return mac
-# # MAC 주소를 전역 변수로 세팅
-# HW_MAC_ADDRESS = get_mac_address()
+
+class AgentAudioController(Protocol):
+    def refresh_devices(self) -> dict[str, object]: ...
+
+    def get_status(self) -> dict[str, object]: ...
+
+    def start_recording(self) -> dict[str, object]: ...
+
+    def stop_recording(self) -> dict[str, object]: ...
+
+    def play_file(self, file_path: str) -> dict[str, object]: ...
+
+    def stop_playback(self) -> dict[str, object]: ...
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+TEST_MODE = _env_flag("TEST_MODE", False)
+TEST_INPUT_TEXT = os.getenv(
+    "TEST_INPUT_TEXT",
+    "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. "
+    "옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구",
+)
+HARDWARE_RUNTIME_MODE = os.getenv("HARDWARE_RUNTIME_MODE", "docker").strip().lower()
+
+
+class DockerModeAudioController:
+    """Docker agent에서 실제 Pi 오디오 장치를 점유하지 않도록 막는 안전 어댑터입니다."""
+
+    def __init__(self, runtime_mode: str) -> None:
+        self.runtime_mode = runtime_mode
+        self.message = (
+            "Docker agent 모드에서는 I2S 오디오 장치를 직접 제어하지 않습니다. "
+            "Raspberry Pi OS 호스트에서 HARDWARE_RUNTIME_MODE=host로 "
+            "`python3 -m hardware.agent.main`을 실행하세요."
+        )
+
+    def refresh_devices(self) -> dict[str, object]:
+        return {"runtime_mode": self.runtime_mode, "error": self.message}
+
+    def get_status(self) -> dict[str, object]:
+        return {
+            "state": "idle",
+            "recording_file_path": None,
+            "playback_file_path": None,
+            "last_error": self.message,
+        }
+
+    def start_recording(self) -> dict[str, object]:
+        raise AgentAudioError(self.message)
+
+    def stop_recording(self) -> dict[str, object]:
+        raise AgentAudioError(self.message)
+
+    def play_file(self, file_path: str) -> dict[str, object]:
+        raise AgentAudioError(f"{self.message} 요청 파일: {file_path}")
+
+    def stop_playback(self) -> dict[str, object]:
+        raise AgentAudioError(self.message)
+
+
+def create_audio_controller(runtime_mode: str | None = None) -> AgentAudioController:
+    mode = (runtime_mode or HARDWARE_RUNTIME_MODE).strip().lower()
+    if mode == "host":
+        from hardware.host_service.audio_controller import AudioController, AudioControllerError
+
+        _ = AudioControllerError
+
+        return AudioController()
+    if mode != "docker":
+        print(f"⚠️ 알 수 없는 HARDWARE_RUNTIME_MODE={mode!r}, docker 안전 모드로 동작합니다.")
+    return DockerModeAudioController(mode)
+
+
+audio_controller: AgentAudioController = create_audio_controller()
 
 HW_MAC_ADDRESS = settings.RASPI_MAC
 # ==========================================
-# 환경 설정 (라즈베리 파이 Docker 환경)
+# 환경 설정 (Raspberry Pi 호스트 / Docker agent 공통)
 # ==========================================
 AI_SERVER_URL = settings.AI_SERVER_URL
 DEPENDENT_ID = settings.DEPENDENT_ID
 DEPENDENT_NAME = None
 DEVICE_HW_KEY = settings.HW_TOKEN
 DEVICE_AI_KEY = settings.AI_TOKEN
-BASE_DIR = "/app/data"
 
 BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
@@ -157,78 +226,24 @@ async def cloud_websocket_client():
 # ==========================================
 # [로컬] STT 및 오디오 분석 모듈
 # ==========================================
-def recognize_speech_from_mic():
+def recognize_speech_from_recording(wav_path: str):
     if TEST_MODE:
-        print(f"📝 [TEST] STT 모킹 작동. 고정 텍스트 반환...")
+        print("[TEST] STT 모킹 작동. 환경변수 TEST_INPUT_TEXT 값을 반환합니다.")
         return TEST_INPUT_TEXT
-    
-    # 실제 하드웨어 로직 (기존 코드)
-    print("🎙️ [하드웨어] 마이크 활성화. 어르신 말씀 듣는 중...")
-    time.sleep(2) 
-    return "실제 음성 데이터 처리 로직"
+
+    # TODO: STT 전용 API/모델 명세가 확정되면 wav_path를 사용해 실제 텍스트 추출을 연결합니다.
+    print(f"[하드웨어] 녹음 파일 준비 완료. STT 연동 대기: {wav_path}")
+    time.sleep(0.2)
+    return os.getenv("FALLBACK_STT_TEXT", "")
 
 # ==========================================
 #  [로컬] 오디오 재생 제어
 # ==========================================
 async def play_local_action(action_file: str):
-    if not action_file: return
-    print(f"🔊 [Local Audio] 추임새/효과음 재생 (딜레이 0초): {action_file}")
-    await asyncio.sleep(0.1) 
-
-# ==========================================
-# [테스트 모드] 오디오 녹음 제어 (AudioRecorder)
-# ==========================================
-class AudioRecorder:
-    def __init__(self):
-        self.is_recording = False
-        self.frames = []
-        self.stream = None
-        self.fs = 16000
-
-    def start_recording(self):
-        if TEST_MODE:
-            print(f"[TEST] 녹음 시작 (시뮬레이션)")
-            self.is_recording = True
-            return
-
-        self.frames = []
-        self.is_recording = True
-        self.stream = sd.InputStream(samplerate=self.fs, channels=1, callback=self.callback)
-        self.stream.start()
-        print("[Edge] 녹음 시작됨...")
-
-    def stop_recording(self, wav_name):
-        self.is_recording = False
-        full_path = os.path.join(BASE_DIR, wav_name)
-        if TEST_MODE:
-            # 1. 파일 존재 여부 확인
-            test_source = os.path.join(BASE_DIR, TEST_INPUT_FILE)
-            if os.path.exists(test_source):
-                print(f"[TEST] 녹음 정지. {TEST_INPUT_FILE} 복사 시작 -> {full_path}")
-                shutil.copy(test_source, full_path) # mp3를 지정된 wav_path로 복사
-                return True, full_path
-            else:
-                print(f"[TEST ERROR] 테스트 파일 없음: {TEST_INPUT_FILE}")
-                return False, None
-
-        # 실제 하드웨어 로직
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-        
-        if self.frames:
-            recording = np.concatenate(self.frames, axis=0)
-            sf.write(full_path, recording, self.fs)
-            print(f"[Edge] 녹음 종료 및 저장 완료: {full_path}")
-            return True, full_path
-        return False, None
-
-    def callback(self, indata, frames, time, status):
-        if self.is_recording:
-            self.frames.append(indata.copy())
-
-# 전역 객체 생성
-recorder = AudioRecorder()
+    if not action_file:
+        return
+    print(f"[Local Audio] 오디오 파일 재생 요청: {action_file}")
+    await asyncio.to_thread(audio_controller.play_file, action_file)
 
     
 # 전역 비동기 큐 생성
@@ -325,6 +340,78 @@ async def get_response_from_ai_server(session, raw_text: str, memory_context: st
         "local_reply": "어르신, 제가 방금 하신 말씀을 놓쳤어요. 다시 한 번 말씀해 주시겠어요?"
     }
 
+
+async def handle_force_record_command(websocket, session, async_tasks: set[asyncio.Task[Any]]) -> None:
+    """React의 force_record 토글 명령을 공용 AudioController로 처리합니다."""
+    status = await asyncio.to_thread(audio_controller.get_status)
+    current_state = status.get("state")
+
+    if current_state != "recording":
+        start_result = await asyncio.to_thread(audio_controller.start_recording)
+        print(f"[Edge] 녹음 시작: {start_result.get('file_path')}")
+        await websocket.send(json.dumps({
+            "status": "listening",
+            "file_path": start_result.get("file_path"),
+        }))
+        return
+
+    stop_result = await asyncio.to_thread(audio_controller.stop_recording)
+    wav_file_path = str(stop_result.get("file_path") or "")
+    print(
+        "[Edge] 녹음 종료: "
+        f"path={wav_file_path}, duration={stop_result.get('duration_seconds')}, "
+        f"size={stop_result.get('size_bytes')}"
+    )
+
+    if not wav_file_path:
+        raise AgentAudioError("녹음 종료 결과에 file_path가 없습니다.")
+
+    try:
+        await websocket.send(json.dumps({
+            "status": "processing",
+            "file_path": wav_file_path,
+            "duration_seconds": stop_result.get("duration_seconds"),
+            "size_bytes": stop_result.get("size_bytes"),
+        }))
+
+        raw_text = await asyncio.to_thread(recognize_speech_from_recording, wav_file_path)
+
+        search_results = db_manager.search_memory(raw_text, limit=1)
+        memory_context = ""
+        if search_results:
+            found_memory = search_results[0]
+            memory_context = f"어르신의 과거 기억 (날짜: {found_memory['date']}): {found_memory['content']}"
+
+        routing_data = await get_response_from_ai_server(session, raw_text, memory_context)
+
+        if routing_data.get("save_flag", False):
+            db_manager.insert_memory(raw_text)
+
+        if routing_data.get("local_action"):
+            task = asyncio.create_task(play_local_action(routing_data.get("local_action")))
+            async_tasks.add(task)
+            task.add_done_callback(async_tasks.discard)
+
+        ai_response_text = routing_data.get("local_reply", "기억 상자를 조금 더 찾아볼게요.")
+        await websocket.send(json.dumps({
+            "status": "speaking",
+            "type": "AI_RESPONSE",
+            "text": ai_response_text,
+        }))
+
+        await audio_task_queue.put({
+            "wav_path": wav_file_path,
+            "user_id": DEPENDENT_ID,
+            "stt_text": raw_text,
+        })
+
+    except Exception as e:
+        print(f"[Edge 프로세스 에러]: {e}")
+        await websocket.send(json.dumps({"status": "error", "message": "분석 중 오류 발생"}))
+    finally:
+        # 어떤 상황에서도 UI 상태는 idle로 복구
+        await websocket.send(json.dumps({"status": "idle"}))
+
 # ==========================================
 # 5. 메인 웹소켓 컨트롤러 (강화 버전)
 # ==========================================
@@ -341,56 +428,15 @@ async def handle_client(websocket, path="/"):
                 
                 # 1. 로컬 하드웨어 제어 명령
                 if data.get("command") == "force_record":
-                    if not recorder.is_recording:
-                        recorder.start_recording()
-                        await websocket.send(json.dumps({"status": "listening"}))
-                    else:
-                        unique_id = uuid.uuid4().hex[:8]
-                        wav_file_path = f"audio_{unique_id}.wav"
-                        success, wav_file_path = recorder.stop_recording(wav_file_path)
-                    
-                        if success:
-                            # [안전장치] 전체 프로세스를 try-except로 감싸서 UI가 멈추지 않게 함
-                            try:
-                                await websocket.send(json.dumps({"status": "processing"}))
-                                
-                                raw_text = await asyncio.to_thread(recognize_speech_from_mic)
-                                
-                                search_results = db_manager.search_memory(raw_text, limit=1)
-                                memory_context = ""
-                                if search_results:
-                                    found_memory = search_results[0]
-                                    memory_context = f"어르신의 과거 기억 (날짜: {found_memory['date']}): {found_memory['content']}"
-                                
-                                routing_data = await get_response_from_ai_server(session, raw_text, memory_context)
-                                
-                                if routing_data.get("save_flag", False):
-                                    db_manager.insert_memory(raw_text)
-                                
-                                if routing_data.get("local_action"):
-                                    task = asyncio.create_task(play_local_action(routing_data.get("local_action")))
-                                    async_tasks.add(task)
-                                    task.add_done_callback(async_tasks.discard)
-                                
-                                ai_response_text = routing_data.get("local_reply", "기억 상자를 조금 더 찾아볼게요.")
-                                await websocket.send(json.dumps({
-                                    "status": "speaking",
-                                    "type": "AI_RESPONSE",
-                                    "text": ai_response_text
-                                }))
-                                
-                                await audio_task_queue.put({
-                                    "wav_path": wav_file_path,
-                                    "user_id": DEPENDENT_ID,
-                                    "stt_text": raw_text
-                                })
-                                
-                            except Exception as e:
-                                print(f"[Edge 프로세스 에러]: {e}")
-                                await websocket.send(json.dumps({"status": "error", "message": "분석 중 오류 발생"}))
-                            finally:
-                                # 어떤 상황에서도 UI 상태는 idle로 복구
-                                await websocket.send(json.dumps({"status": "idle"}))
+                    try:
+                        await handle_force_record_command(websocket, session, async_tasks)
+                    except Exception as e:
+                        print(f"[AudioController 에러]: {e}")
+                        await websocket.send(json.dumps({
+                            "status": "error",
+                            "message": str(e),
+                            "runtime_mode": HARDWARE_RUNTIME_MODE,
+                        }))
 
                 # 2. 프론트엔드가 클라우드(백엔드)로 보내려는 상태나 응답인 경우
                 elif data.get("target") == "cloud":

@@ -1,19 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../css/ElderPage.css';
-import {
-  getStatus,
-  HardwareApiError,
-  HardwareState,
-  HardwareStatusResponse,
-  health,
-  playAudio,
-  startRecording,
-  stopAudio,
-  stopRecording,
-} from '../services/hardwareApi';
 
 type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'send' | 'finish';
-type VoiceUiState = HardwareState | 'stopping';
+type VoiceUiState = 'idle' | 'recording' | 'processing' | 'speaking' | 'error';
 
 interface RecordedAudioSummary {
   filePath: string;
@@ -21,39 +10,36 @@ interface RecordedAudioSummary {
   sizeBytes: number;
 }
 
-const getHardwareErrorMessages = (error: unknown): { message: string; detail?: string } => {
-  if (error instanceof HardwareApiError) {
-    if (error.kind === 'network' || error.kind === 'timeout') {
-      return {
-        message: '음성 장치에 연결할 수 없습니다.',
-        detail: error.message,
-      };
-    }
-    return {
-      message: '음성 장치를 사용할 수 없습니다.',
-      detail: error.message,
-    };
-  }
+type AgentStatus = 'listening' | 'processing' | 'speaking' | 'idle' | 'error';
 
-  return { message: '음성 장치에 연결할 수 없습니다.' };
-};
+interface AgentMessage {
+  status?: AgentStatus;
+  type?: 'AI_RESPONSE' | string;
+  text?: string;
+  message?: string;
+  file_path?: string;
+  duration_seconds?: number;
+  size_bytes?: number;
+}
+
+const DEFAULT_AGENT_WS_URL = 'ws://127.0.0.1:8765';
 
 const getVoiceStatusText = (
   voiceState: VoiceUiState,
-  isCheckingHardware: boolean,
-  isRequestingHardware: boolean,
+  isConnectingAgent: boolean,
+  isWaitingAgent: boolean,
 ): string => {
-  if (isCheckingHardware) {
-    return '음성 장치를 확인하고 있습니다.';
+  if (isConnectingAgent) {
+    return '음성 장치를 연결하고 있습니다.';
   }
   if (voiceState === 'recording') {
     return '말씀을 듣고 있습니다.';
   }
-  if (voiceState === 'stopping' || isRequestingHardware) {
+  if (voiceState === 'processing' || isWaitingAgent) {
     return '이야기를 정리하고 있습니다.';
   }
-  if (voiceState === 'playing') {
-    return '안내 음성을 들려드리고 있습니다.';
+  if (voiceState === 'speaking') {
+    return '안내를 준비하고 있습니다.';
   }
   if (voiceState === 'error') {
     return '음성 장치에 연결할 수 없습니다.';
@@ -64,222 +50,261 @@ const getVoiceStatusText = (
 const ElderPage = () => {
   const [screen, setScreen] = useState<Screen>('home');
   const [voiceState, setVoiceState] = useState<VoiceUiState>('idle');
-  const [isCheckingHardware, setIsCheckingHardware] = useState(false);
-  const [isRequestingHardware, setIsRequestingHardware] = useState(false);
+  const [isConnectingAgent, setIsConnectingAgent] = useState(false);
+  const [isWaitingAgent, setIsWaitingAgent] = useState(false);
+  const [isAgentConnected, setIsAgentConnected] = useState(false);
   const [hardwareError, setHardwareError] = useState<string | null>(null);
   const [hardwareErrorDetail, setHardwareErrorDetail] = useState<string | null>(null);
   const [currentRecordingPath, setCurrentRecordingPath] = useState<string | null>(null);
   const [lastRecording, setLastRecording] = useState<RecordedAudioSummary | null>(null);
+  const [aiResponseText, setAiResponseText] = useState('');
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const shouldReconnectRef = useRef(false);
+  const isUnmountedRef = useRef(false);
+  const agentWsUrl = useMemo(
+    () => process.env.REACT_APP_HARDWARE_WS_URL || DEFAULT_AGENT_WS_URL,
+    [],
+  );
 
-  const applyHardwareStatus = useCallback((status: HardwareStatusResponse) => {
-    if (status.state === 'recording') {
-      setVoiceState('recording');
-      setCurrentRecordingPath(status.recording_file_path);
-      setHardwareError(null);
-      setHardwareErrorDetail(null);
-      return;
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
     }
-
-    if (status.state === 'playing') {
-      setVoiceState('playing');
-      setHardwareError(null);
-      setHardwareErrorDetail(null);
-      return;
-    }
-
-    if (status.state === 'error') {
-      setVoiceState('error');
-      setHardwareError('음성 장치에 연결할 수 없습니다.');
-      setHardwareErrorDetail(status.last_error || null);
-      return;
-    }
-
-    setVoiceState('idle');
-    setCurrentRecordingPath(null);
-    setHardwareError(null);
-    setHardwareErrorDetail(null);
   }, []);
 
-  const refreshHardwareStatus = useCallback(async () => {
-    setIsCheckingHardware(true);
+  const handleAgentMessage = useCallback((message: AgentMessage) => {
+    if (message.type === 'AI_RESPONSE' && message.text) {
+      setAiResponseText(message.text);
+    }
+
+    if (!message.status) {
+      return;
+    }
+
+    setIsWaitingAgent(false);
+
+    if (message.status === 'listening') {
+      setVoiceState('recording');
+      setCurrentRecordingPath(message.file_path || null);
+      setHardwareError(null);
+      setHardwareErrorDetail(null);
+      setScreen('ai');
+      return;
+    }
+
+    if (message.status === 'processing') {
+      setVoiceState('processing');
+      setCurrentRecordingPath(null);
+      if (message.file_path) {
+        setLastRecording({
+          filePath: message.file_path,
+          durationSeconds: message.duration_seconds || 0,
+          sizeBytes: message.size_bytes || 0,
+        });
+      }
+      setHardwareError(null);
+      setHardwareErrorDetail(null);
+      setScreen('ai');
+      return;
+    }
+
+    if (message.status === 'speaking') {
+      setVoiceState('speaking');
+      setHardwareError(null);
+      setHardwareErrorDetail(null);
+      setScreen('ai');
+      return;
+    }
+
+    if (message.status === 'idle') {
+      setVoiceState('idle');
+      setCurrentRecordingPath(null);
+      setHardwareError(null);
+      setHardwareErrorDetail(null);
+      setScreen('talk');
+      return;
+    }
+
+    if (message.status === 'error') {
+      setVoiceState('error');
+      setHardwareError(message.message || '음성 장치에 연결할 수 없습니다.');
+      setHardwareErrorDetail(null);
+      setScreen('ai');
+    }
+  }, []);
+
+  const connectAgent = useCallback(() => {
+    if (isUnmountedRef.current) {
+      return;
+    }
+    const currentSocket = wsRef.current;
+    if (
+      currentSocket &&
+      (currentSocket.readyState === WebSocket.OPEN || currentSocket.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
+    clearReconnectTimer();
+    setIsConnectingAgent(true);
+    setHardwareError(null);
+    setHardwareErrorDetail(null);
+
     try {
-      const healthResponse = await health();
-      if (healthResponse.status !== 'ok') {
+      const socket = new WebSocket(agentWsUrl);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        if (isUnmountedRef.current) {
+          socket.close();
+          return;
+        }
+        setIsAgentConnected(true);
+        setIsConnectingAgent(false);
+        setVoiceState('idle');
+        setHardwareError(null);
+        setHardwareErrorDetail(null);
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data) as AgentMessage;
+          handleAgentMessage(message);
+        } catch {
+          setVoiceState('error');
+          setHardwareError('음성 장치 응답을 읽을 수 없습니다.');
+          setHardwareErrorDetail(null);
+          setIsWaitingAgent(false);
+        }
+      };
+
+      socket.onerror = () => {
+        setIsAgentConnected(false);
+        setIsConnectingAgent(false);
+        setIsWaitingAgent(false);
         setVoiceState('error');
         setHardwareError('음성 장치에 연결할 수 없습니다.');
-        setHardwareErrorDetail(
-          healthResponse.alsa?.error ||
-            healthResponse.recordings_directory_error ||
-            healthResponse.hardware?.last_error ||
-            null,
-        );
-        return;
-      }
-      applyHardwareStatus(healthResponse.hardware);
-    } catch (error) {
-      const { message, detail } = getHardwareErrorMessages(error);
-      setVoiceState('error');
-      setHardwareError(message);
-      setHardwareErrorDetail(detail || null);
-    } finally {
-      setIsCheckingHardware(false);
-    }
-  }, [applyHardwareStatus]);
+        setHardwareErrorDetail(agentWsUrl);
+      };
 
-  useEffect(() => {
-    void refreshHardwareStatus();
-  }, [refreshHardwareStatus]);
-
-  useEffect(() => {
-    if (voiceState !== 'playing') {
-      return undefined;
-    }
-
-    const statusTimer = window.setInterval(async () => {
-      try {
-        const status = await getStatus();
-        if (status.state !== 'playing') {
-          applyHardwareStatus(status);
+      socket.onclose = () => {
+        if (wsRef.current && wsRef.current !== socket) {
+          return;
         }
-      } catch (error) {
-        const { message, detail } = getHardwareErrorMessages(error);
-        setVoiceState('error');
-        setHardwareError(message);
-        setHardwareErrorDetail(detail || null);
+        if (wsRef.current === socket) {
+          wsRef.current = null;
+        }
+        setIsAgentConnected(false);
+        setIsConnectingAgent(false);
+        setIsWaitingAgent(false);
+        if (!isUnmountedRef.current && shouldReconnectRef.current) {
+          reconnectTimerRef.current = window.setTimeout(connectAgent, 2000);
+          return;
+        }
+        if (!isUnmountedRef.current) {
+          setVoiceState('error');
+          setHardwareError('음성 장치에 연결할 수 없습니다.');
+          setHardwareErrorDetail(agentWsUrl);
+        }
+      };
+    } catch {
+      setIsAgentConnected(false);
+      setIsConnectingAgent(false);
+      setVoiceState('error');
+      setHardwareError('음성 장치에 연결할 수 없습니다.');
+      setHardwareErrorDetail(agentWsUrl);
+    }
+  }, [agentWsUrl, clearReconnectTimer, handleAgentMessage]);
+
+  useEffect(() => {
+    isUnmountedRef.current = false;
+    shouldReconnectRef.current = false;
+    connectAgent();
+
+    return () => {
+      isUnmountedRef.current = true;
+      shouldReconnectRef.current = false;
+      clearReconnectTimer();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
-    }, 1500);
+    };
+  }, [clearReconnectTimer, connectAgent]);
 
-    return () => window.clearInterval(statusTimer);
-  }, [applyHardwareStatus, voiceState]);
-
-  const handleRetryHardware = async () => {
-    if (isCheckingHardware || isRequestingHardware) {
+  const handleRetryHardware = () => {
+    if (isConnectingAgent || isWaitingAgent) {
       return;
     }
-    await refreshHardwareStatus();
-  };
-
-  const handleStartRecording = async () => {
-    if (isRequestingHardware || isCheckingHardware || voiceState === 'recording' || voiceState === 'stopping') {
-      return;
+    shouldReconnectRef.current = false;
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
-
-    setIsRequestingHardware(true);
+    setVoiceState('idle');
+    setIsAgentConnected(false);
     setHardwareError(null);
     setHardwareErrorDetail(null);
-
-    try {
-      const response = await startRecording();
-      setCurrentRecordingPath(response.file_path);
-      setVoiceState('recording');
-      setScreen('ai');
-    } catch (error) {
-      const { message, detail } = getHardwareErrorMessages(error);
-      setVoiceState('error');
-      setHardwareError(message);
-      setHardwareErrorDetail(detail || null);
-      setScreen('ai');
-    } finally {
-      setIsRequestingHardware(false);
-    }
+    connectAgent();
   };
 
-  const handleStopRecording = async () => {
-    if (isRequestingHardware || voiceState !== 'recording') {
-      return;
-    }
-
-    setVoiceState('stopping');
-    setIsRequestingHardware(true);
-    setHardwareError(null);
-    setHardwareErrorDetail(null);
-
-    try {
-      const response = await stopRecording();
-      setLastRecording({
-        filePath: response.file_path,
-        durationSeconds: response.duration_seconds,
-        sizeBytes: response.size_bytes,
-      });
-      setCurrentRecordingPath(null);
-      setVoiceState('idle');
-      setScreen('diary');
-    } catch (error) {
-      const { message, detail } = getHardwareErrorMessages(error);
-      setVoiceState('error');
-      setHardwareError(message);
-      setHardwareErrorDetail(detail || null);
-      setScreen('ai');
-    } finally {
-      setIsRequestingHardware(false);
-    }
-  };
-
-  const handlePrimaryConversationAction = async () => {
+  const handlePrimaryConversationAction = () => {
     if (voiceState === 'error') {
-      await handleRetryHardware();
+      handleRetryHardware();
       return;
     }
 
-    if (voiceState === 'recording') {
-      await handleStopRecording();
+    if (isConnectingAgent || isWaitingAgent || voiceState === 'processing' || voiceState === 'speaking') {
       return;
     }
 
-    await handleStartRecording();
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      setVoiceState('error');
+      setHardwareError('음성 장치에 연결할 수 없습니다.');
+      setHardwareErrorDetail(agentWsUrl);
+      return;
+    }
+
+    setIsWaitingAgent(true);
+    setHardwareError(null);
+    setHardwareErrorDetail(null);
+    if (voiceState !== 'recording') {
+      setAiResponseText('');
+      setScreen('ai');
+    }
+
+    try {
+      wsRef.current.send(JSON.stringify({ command: 'force_record' }));
+      if (voiceState === 'recording') {
+        setVoiceState('processing');
+      }
+    } catch {
+      setIsWaitingAgent(false);
+      setVoiceState('error');
+      setHardwareError('음성 장치에 명령을 보낼 수 없습니다.');
+      setHardwareErrorDetail(agentWsUrl);
+    }
   };
 
-  const handlePlayLastRecording = async () => {
-    if (isRequestingHardware) {
-      return;
-    }
-
-    if (voiceState === 'playing') {
-      setIsRequestingHardware(true);
-      try {
-        await stopAudio();
-        setVoiceState('idle');
-      } catch (error) {
-        const { message, detail } = getHardwareErrorMessages(error);
-        setVoiceState('error');
-        setHardwareError(message);
-        setHardwareErrorDetail(detail || null);
-      } finally {
-        setIsRequestingHardware(false);
-      }
-      return;
-    }
-
+  const handlePlayLastRecording = () => {
     if (!lastRecording) {
       setVoiceState('error');
       setHardwareError('다시 들을 녹음이 없습니다.');
       setHardwareErrorDetail(null);
-      return;
-    }
-
-    setIsRequestingHardware(true);
-    setHardwareError(null);
-    setHardwareErrorDetail(null);
-
-    try {
-      await playAudio({ path: lastRecording.filePath });
-      setVoiceState('playing');
-    } catch (error) {
-      const { message, detail } = getHardwareErrorMessages(error);
-      setVoiceState('error');
-      setHardwareError(message);
-      setHardwareErrorDetail(detail || null);
-    } finally {
-      setIsRequestingHardware(false);
     }
   };
 
   const statusText =
-    isCheckingHardware || isRequestingHardware
-      ? getVoiceStatusText(voiceState, isCheckingHardware, isRequestingHardware)
-      : hardwareError || getVoiceStatusText(voiceState, isCheckingHardware, isRequestingHardware);
+    isConnectingAgent || isWaitingAgent
+      ? getVoiceStatusText(voiceState, isConnectingAgent, isWaitingAgent)
+      : hardwareError || getVoiceStatusText(voiceState, isConnectingAgent, isWaitingAgent);
   const actionButtonLabel = (() => {
-    if (isRequestingHardware || voiceState === 'stopping') {
+    if (isConnectingAgent) {
+      return '연결 중';
+    }
+    if (isWaitingAgent || voiceState === 'processing') {
       return '잠시만 기다려주세요';
     }
     if (voiceState === 'error') {
@@ -290,10 +315,10 @@ const ElderPage = () => {
     }
     return '🎤 대화 시작';
   })();
-  const isActionDisabled = isCheckingHardware || isRequestingHardware || voiceState === 'stopping';
-  const isStartDisabled = isActionDisabled || voiceState === 'error';
+  const isActionDisabled = isConnectingAgent || isWaitingAgent || voiceState === 'processing' || voiceState === 'speaking';
+  const isStartDisabled = isActionDisabled || voiceState === 'error' || !isAgentConnected;
   const hasHardwareError = voiceState === 'error' && Boolean(hardwareError);
-  const talkButtonLabel = voiceState === 'recording' ? '■ 대화 종료' : isRequestingHardware ? '준비 중' : '🎤 대화 시작';
+  const talkButtonLabel = voiceState === 'recording' ? '■ 대화 종료' : isWaitingAgent ? '준비 중' : '🎤 대화 시작';
 
   return (
     <div className="elder-page">
@@ -380,9 +405,9 @@ const ElderPage = () => {
             <div className="speech-bubble">
                 {statusText}<br />
                 {voiceState === 'recording' && '천천히 말씀해주세요.'}
-                {voiceState === 'stopping' && '잠시만 기다려주세요.'}
+                {voiceState === 'processing' && '잠시만 기다려주세요.'}
                 {voiceState === 'idle' && '버튼을 눌러 시작해주세요.'}
-                {voiceState === 'playing' && '녹음된 소리를 확인합니다.'}
+                {voiceState === 'speaking' && (aiResponseText || '곧 안내해드릴게요.')}
                 {voiceState === 'error' && '아래 버튼을 눌러 다시 확인해주세요.'}
             </div>
             </div>
@@ -392,7 +417,7 @@ const ElderPage = () => {
               {voiceState === 'recording' ? '녹음 중' : '대기 중'}
             </div>
             <div className="voice-wave">▂▃▅▆▇▆▅▃▂▃▅▆▇▆▅</div>
-            <p className="listening-text">{getVoiceStatusText(voiceState, isCheckingHardware, isRequestingHardware)}</p>
+            <p className="listening-text">{getVoiceStatusText(voiceState, isConnectingAgent, isWaitingAgent)}</p>
             {currentRecordingPath && (
               <p className="recording-path-text">
                 저장 중: {currentRecordingPath}
@@ -443,9 +468,9 @@ const ElderPage = () => {
             <button
               className="diary-listen-btn"
               onClick={handlePlayLastRecording}
-              disabled={isRequestingHardware || !lastRecording}
+              disabled={!lastRecording}
             >
-              {voiceState === 'playing' ? '■ 듣기 중지' : '🔊 다시듣기'}
+              🔊 다시듣기
             </button>
             <button className="diary-next-btn" onClick={() => setScreen('send')}>
               ➡ 다음

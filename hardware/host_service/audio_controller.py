@@ -235,7 +235,7 @@ class AudioController:
         self._prepare_recordings_directory()
         self.refresh_devices()
 
-    def refresh_devices(self) -> None:
+    def refresh_devices(self) -> dict[str, object]:
         capture, playback, error = self._resolver.resolve()
         with self._lock:
             self._capture_device = capture
@@ -250,6 +250,12 @@ class AudioController:
                 capture.device if capture else None,
                 playback.device if playback else None,
             )
+        return {
+            "card_match": self._resolver.card_match,
+            "capture": asdict(capture) if capture else None,
+            "playback": asdict(playback) if playback else None,
+            "error": error,
+        }
 
     def health(self) -> dict[str, object]:
         self.refresh_devices()
@@ -274,6 +280,10 @@ class AudioController:
         with self._lock:
             self._refresh_record_process_locked()
             return self._status_locked()
+
+    def get_status(self) -> dict[str, object]:
+        """Agent와 FastAPI 양쪽에서 사용하는 공개 상태 조회 API입니다."""
+        return self.status()
 
     def start_recording(self) -> dict[str, object]:
         self.refresh_devices()
@@ -458,6 +468,10 @@ class AudioController:
                 "replaced_file_path": replaced_file,
                 "policy": "새 재생 요청은 기존 재생을 중지하고 교체합니다.",
             }
+
+    def play_file(self, file_path: str) -> dict[str, object]:
+        """Agent가 사용하는 공개 재생 API입니다."""
+        return self.play(file_path)
 
     def stop_playback(self) -> dict[str, object]:
         with self._lock:

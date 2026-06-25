@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from audio_controller import (
+from hardware.host_service import (
     AudioConflictError,
     AudioController,
     AudioControllerError,
@@ -104,7 +104,7 @@ def health() -> dict[str, object]:
 
 @app.get("/hardware/status")
 def hardware_status() -> dict[str, object]:
-    return audio_controller.status()
+    return audio_controller.get_status()
 
 
 @app.post("/hardware/record/start")
@@ -126,7 +126,7 @@ def stop_recording() -> dict[str, object]:
 @app.post("/hardware/audio/play")
 def play_audio(request: PlayAudioRequest) -> dict[str, object]:
     try:
-        return audio_controller.play(request.path)
+        return audio_controller.play_file(request.path)
     except AudioControllerError as error:
         _raise_http_error(error)
 
@@ -162,4 +162,9 @@ def _hardware_port() -> int:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=_hardware_port(), reload=False)
+    uvicorn.run(
+        "hardware.host_service.main:app",
+        host="0.0.0.0",
+        port=_hardware_port(),
+        reload=False,
+    )
