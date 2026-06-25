@@ -26,6 +26,7 @@ class Settings:
 
     FRONTEND_URL :str = os.getenv("FRONTEND_URL","http://frontend:3000")
 
+    BACKEND_URL : str = os.getenv("BACKEND_URL", "http://backend:8000")
     # JWT 보안 설정 (이후 로그인 구현 시 사용)
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "default-token")
     ALGORITHM: str = "HS256"

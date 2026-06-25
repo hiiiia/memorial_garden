@@ -12,11 +12,13 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import OperationalError
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from contextlib import asynccontextmanager
 
 from core.response import unified_response
 from api.v1.router import api_router 
 from api.v1.ws import ws_router
-
+from api.v1.utils.tts import proactive_greeting_job
 
 try:
     # 서버 구동 시 DB 테이블 자동 생성
@@ -24,12 +26,30 @@ try:
 except OperationalError as e:
     # DB가 꺼져있어도 FastAPI 서버 자체는 일단 켜지도록 예외 처리
     print(f"⚠️ [경고] 서버 구동 중 DB 연결에 실패했습니다: {e}")
+
+scheduler = AsyncIOScheduler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 🌟 1. 테스트용: 서버 켜지고 매 1분마다 실행 (디버깅용)
+    scheduler.add_job(proactive_greeting_job, 'interval', minutes=1)
     
+    # 🌟 2. 실전용: 매일 오후 2시 정각에 실행하려면 주석 해제
+    #scheduler.add_job(proactive_greeting_job, 'cron', hour=14, minute=0)
     
+    scheduler.start()
+    print("⏳ [System] 백그라운드 스케줄러 가동 시작!")
+    
+    yield # FastAPI 서버 실행 중...
+    
+    scheduler.shutdown()
+    print("🛑 [System] 스케줄러 종료.")
+
 # FastAPI 앱 인스턴스 생성
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    version=settings.PROJECT_VERSION
+    version=settings.PROJECT_VERSION,
+    lifespan=lifespan
 )
 
 # 1. HTTP 에러 팩토리 사용 (StarletteHTTPException 사용)
@@ -90,7 +110,14 @@ app.add_middleware(
 # # '/static/audio'로 분리하여 마운트
 # app.mount("/static/audio", StaticFiles(directory=AUDIO_SAVE_DIR), name="static_audio")
 
-app.mount("/static/diary_images", StaticFiles(directory="/app/uploads/diary_images"), name="diary_images")
+DIARY_IMG_SAVE_DIR = "/app/uploads/diary_images"
+GRETTING_VOICE_SAVE_DIR = "/app/uploads/greeting_voice"
+
+os.makedirs(DIARY_IMG_SAVE_DIR, exist_ok=True)
+os.makedirs(GRETTING_VOICE_SAVE_DIR, exist_ok=True)
+
+app.mount("/static/diary_images", StaticFiles(directory=DIARY_IMG_SAVE_DIR), name="diary_images")
+app.mount("/static/greeting_voice", StaticFiles(directory=GRETTING_VOICE_SAVE_DIR), name="greeting_voice")
 
 
 # 라우터 등록 (이 한 줄로 모든 api/v1/... 경로가 활성화됩니다!)

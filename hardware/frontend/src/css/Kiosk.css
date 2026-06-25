@@ -1127,3 +1127,54 @@
     animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
   }
 }
+
+
+/* ========================================== */
+/* 💌 안부 묻기 팝업 (Proactive Greeting)       */
+/* ========================================== */
+.greeting-popup {
+  z-index: 99999;
+}
+
+.greeting-content {
+  text-align: center;
+  padding: 30px;
+}
+
+.greeting-title {
+  font-size: 2rem;
+  margin-bottom: 20px;
+}
+
+.greeting-text {
+  font-size: 1.5rem;
+  line-height: 1.6;
+  margin-bottom: 30px;
+}
+
+.greeting-buttons {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+/* 안부 팝업 공통 버튼 스타일 */
+.greeting-btn {
+  padding: 15px 30px;
+  font-size: 1.3rem;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+/* 개별 버튼 색상 */
+.btn-listen { background-color: #4CAF50; }
+.btn-listen:hover { background-color: #45a049; }
+
+.btn-chat { background-color: #2196F3; }
+.btn-chat:hover { background-color: #1e88e5; }
+
+.btn-close { background-color: #9e9e9e; }
+.btn-close:hover { background-color: #757575; }
