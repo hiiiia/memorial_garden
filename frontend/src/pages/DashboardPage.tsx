@@ -445,6 +445,21 @@ const checkNoDiaryForThreeDays = async () => {
 
   const riskScore = Number(dashData.risk_assessment.score);
   const riskInfo = getRiskInfo(riskScore);
+  const lastInteractionDate = dashData.last_interaction.date;
+  const lastInteractionLinkLabel = lastInteractionDate
+    ? lastInteractionDate === formatYYYYMMDD(new Date())
+      ? '오늘 일기 ↗'
+      : '최근 일기 ↗'
+    : null;
+
+  const handleLastInteractionClick = () => {
+    if (!lastInteractionDate) {
+      alert('대화 기록이 없습니다.');
+      return;
+    }
+
+    navigate(`/diary?date=${encodeURIComponent(lastInteractionDate)}`);
+  };
 
   // 3. 연동이 완료된 정상 대시보드 화면 (Linked State)
   return (
@@ -561,8 +576,17 @@ const checkNoDiaryForThreeDays = async () => {
     ))}
   </div>
 </div>
-          <div className="dashboard-card interactive" onClick={() => navigate('/diary')}>
-            <h3 className="card-title">마지막 대화 <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#888' }}>(오늘 일기 ↗)</span></h3>
+          <div
+            className={`dashboard-card${lastInteractionDate ? ' interactive' : ''}`}
+            onClick={handleLastInteractionClick}
+            style={{ cursor: lastInteractionDate ? 'pointer' : 'default' }}
+          >
+            <h3 className="card-title">
+              마지막 대화
+              {lastInteractionLinkLabel && (
+                <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#888' }}> ({lastInteractionLinkLabel})</span>
+              )}
+            </h3>
             <div className="time-text">{dashData.last_interaction.time_label}</div>
             <p className="card-subtext">{dashData.last_interaction.duration_label}</p>
             {dashData.last_interaction.summary && (
