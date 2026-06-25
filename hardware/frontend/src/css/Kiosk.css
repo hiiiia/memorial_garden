@@ -30,19 +30,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 50px;
+  gap: 30px;
   height: calc(100% - 40px);
 }
 
 .robot {
-  width: 220px;
-  height: 220px;
+  width: 240px;
+  height: 240px;
   background: #e8f5dc;
   border-radius: 50%;
   display: flex;
   justify-content: center;
   align-items: center;
-  font-size: 110px;
+  font-size: 90px;
   flex-shrink: 0;
 }
 
@@ -56,7 +56,7 @@
 }
 
 .info h1 {
-  font-size: 96px;
+  font-size: 110px;
   margin: 8px 0;
   font-weight: 900;
   line-height: 1.05;
@@ -73,8 +73,8 @@
 }
 
 .menu-btn {
-  width: 230px;
-  height: 300px;
+  width: 240px;
+  height: 320px;
   border: none;
   border-radius: 24px;
   color: white;
@@ -103,27 +103,28 @@
 }
 
 .talk-title {
-  font-size: 62px;
+  font-size: 70px;
   font-weight: 900;
   margin: 20px 0 30px;
   text-align: center;
 }
 
 .talk-robot {
-  width: 210px;
-  height: 210px;
+  width: 300px;
+  height: 300px;
   border-radius: 50%;
   background: #e6efd7;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 100px;
+  margin-top: 40px;
 }
 
 .talk-buttons {
   margin-top: auto;
   display: flex;
-  gap: 30px;
+  gap: 50px;
   width: 100%;
 }
 
@@ -154,6 +155,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
+  padding-top: 20px;
 }
 
 .ai-content {
@@ -164,22 +167,22 @@
 }
 
 .ai-robot {
-  width: 220px;
-  height: 220px;
+  width: 280px;
+  height: 280px;
   background: #e8f5dc;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 105px;
+  font-size: 130px;
 }
 
 .speech-bubble {
   background: white;
   border: 3px solid #222;
-  border-radius: 28px;
-  padding: 32px 48px;
-  font-size: 42px;
+  border-radius: 40px;
+  padding: 40px 56px;
+  font-size: 50px;
   line-height: 1.35;
 }
 
@@ -196,8 +199,8 @@
 }
 
 .stop-btn {
-  width: 700px;
-  height: 130px;
+  width: 750px;
+  height: 180px;
   background: white;
   border: 3px solid #aaa;
   border-radius: 24px;
@@ -247,7 +250,7 @@
 
 .diary-text-box {
   width: 620px;
-  height: 380px;
+  height: 450px;
 
   background: #f2edab;
   border-radius: 18px;
@@ -311,10 +314,10 @@
 }
 
 .send-title {
-  font-size: 76px;
+  font-size: 100px;
   font-weight: 900;
   text-align: center;
-  margin: 0 0 38px;
+  margin: 0 0 70px;
 }
 
 .send-content {
@@ -322,7 +325,7 @@
   height: 470px;
   display: grid;
   grid-template-columns: 35% 65%;
-  column-gap: 35px;
+  column-gap: 50px;
   align-items: center;
 }
 
@@ -342,7 +345,7 @@
 }
 
 .send-question {
-  font-size: 42px;
+  font-size: 43px;
   line-height: 1.35;
   text-align: center;
   margin: 10px 0 0;
@@ -351,12 +354,12 @@
 .send-buttons {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 50px;
 }
 
 .send-main-btn,
 .send-stop-btn {
-  width: 100%;
+  width: 90%;
   height: 180px;
   border-radius: 24px;
   font-size: 90px;
@@ -379,10 +382,10 @@
 /* FINISH */
 .finish-card {
   display: grid;
-  grid-template-columns: 40% 60%;
-  column-gap: 120px;
+  grid-template-columns: 45% 50%;
+  column-gap: 90px;
   align-items: center;
-  padding: 36px 60px;
+  padding: 50px 50px;
   box-sizing: border-box;
 }
 
@@ -394,20 +397,20 @@
 }
 
 .finish-check {
-  width: 230px;
-  height: 230px;
+  width: 280px;
+  height: 280px;
   border-radius: 50%;
   background: #ff6268;
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 150px;
+  font-size: 180px;
   font-weight: 900;
 }
 
 .finish-main-text {
-  font-size: 56px;
+  font-size: 68px;
   font-weight: 900;
   margin: 0;
   text-align: center;
@@ -426,32 +429,32 @@
 }
 
 .finish-profile {
-  width: 120px;
-  height: 120px;
+  width: 150px;
+  height: 150px;
   border-radius: 50%;
   background: #fff0df;
   border: 4px solid #e2d2b8;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 70px;
+  font-size: 88px;
 }
 
 .finish-family-text {
-  font-size: 58px;
-  line-height: 1.2;
+  font-size: 68px;
+  line-height: 1.25;
   font-weight: 900;
   margin: 0;
 }
 
 .finish-btn {
   width: 600px;
-  height: 150px;
+  height: 180px;
   background: #ff6268;
   color: white;
   border: none;
-  border-radius: 24px;
-  font-size: 88px;
+  border-radius: 28px;
+  font-size: 105px;
   font-weight: 900;
   cursor: pointer;
 }
@@ -789,7 +792,7 @@
   padding: 2.5rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
   width: 100%;
-  max-width: 1200px;
+  max-width: 1400px;
   height: 800px; /* 고정 높이 방지 시 min-height로 변경 가능 */
   margin: 0 auto;
   box-sizing: border-box;
