@@ -32,7 +32,7 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 🌟 1. 테스트용: 서버 켜지고 매 1분마다 실행 (디버깅용)
-    scheduler.add_job(proactive_greeting_job, 'interval', minutes=1)
+    # scheduler.add_job(proactive_greeting_job, 'interval', minutes=1)
     
     # 🌟 2. 실전용: 매일 오후 2시 정각에 실행하려면 주석 해제
     #scheduler.add_job(proactive_greeting_job, 'cron', hour=14, minute=0)

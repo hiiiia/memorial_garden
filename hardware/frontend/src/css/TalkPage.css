@@ -1,0 +1,53 @@
+.talk-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.talk-title {
+  font-size: 70px;
+  font-weight: 900;
+  margin: 20px 0 30px;
+  text-align: center;
+}
+
+.talk-robot {
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: #e6efd7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 100px;
+  margin-top: 40px;
+}
+
+.talk-buttons {
+  margin-top: auto;
+  display: flex;
+  gap: 50px;
+  width: 100%;
+}
+
+.talk-main-btn,
+.talk-close-btn {
+  flex: 1;
+  height: 150px;
+  border-radius: 24px;
+  font-size: 80px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.talk-main-btn {
+  background: #7ea948;
+  color: white;
+  border: none;
+}
+
+.talk-close-btn {
+  background: white;
+  color: black;
+  border: 2px solid #cfcfcf;
+}

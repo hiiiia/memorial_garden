@@ -1,0 +1,42 @@
+.elder-page {
+  background-color: #f4f4f4;
+  width: 100vw;
+  height: 100vh;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.home-card {
+  width: 100%;
+  height: calc(100vh - 32px);
+  background-color: #fdf9ef;
+  border: 1px solid #ccc;
+  border-radius: 18px;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.logo {
+  color: #4b8b2a;
+  font-size: 18px;
+  font-weight: 900;
+  margin-bottom: 18px;
+}
+
+/* ========================================== */
+/* 공통 카드 레이아웃 (키오스크 전체 컨테이너용) */
+/* ========================================== */
+.home-card {
+  position: relative;
+  background-color: #F8F6EE;
+  border-radius: 2rem;
+  padding: 2.5rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  max-width: 1400px;
+  height: 800px; /* 고정 높이 방지 시 min-height로 변경 가능 */
+  margin: 0 auto;
+  box-sizing: border-box;
+}
