@@ -162,7 +162,8 @@ async def receive_healthcare_log(
                         guardian=guardian_obj,
                         dependent_name=target_name,
                         risk_score=analysis.risk_score,
-                        summary=analysis.llm_summary
+                        summary=analysis.llm_summary,
+                        db=db
                     )
             # ====================================================
 

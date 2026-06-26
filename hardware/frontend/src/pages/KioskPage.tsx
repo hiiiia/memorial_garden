@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import {config} from '../config/index'
 // 팀원이 작성한 CSS 파일 경로에 맞게 수정해주세요. (예: import '../css/ElderPage.css';)
 import '../css/Common.css';
 import '../css/HomePage.css';
@@ -70,8 +71,8 @@ const KioskPage: React.FC = () => {
       console.log("DEVICE_TOKEN =",token);
 
       if (!token) return;
-
-      const response = await fetch("http://192.168.1.86:8000/api/v1/dependent/diary", {
+      
+      const response = await fetch(`${config.apiBaseUrl}/api/v1/dependent/diary`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -297,7 +298,7 @@ const KioskPage: React.FC = () => {
       console.log(`[Emergency] 🚨 긴급 호출 시도 중... (MAC: ${macAddress})`);
 
       // 2. 백엔드로 POST 요청 보내기 (인증 토큰 없음)
-      const response = await fetch("http://192.168.1.82:8000/api/v1/dependent/emergency", {
+      const response = await fetch(`${config.apiBaseUrl}/api/v1/dependent/emergency`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

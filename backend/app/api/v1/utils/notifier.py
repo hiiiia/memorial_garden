@@ -5,9 +5,10 @@ import json
 
 from core.config import settings
 from db.models import Guardian
+from db.database import get_db
 
 from api.v1.utils.security import decrypt_token # 복호화 함수
-
+from api.v1.auth.auth import refresh_kakao_token_procedure
 
 SLACK_CHANNEL= settings.SLACK_CHANNEL
 SLACK_TOKEN = settings.SLACK_TOKEN
@@ -74,10 +75,10 @@ async def send_emergency_alert(
             
             
             
-            
-async def send_kakao_alert(guardian: Guardian, dependent_name: str, risk_score: float, summary: str):
+async def send_kakao_alert(guardian, dependent_name: str, risk_score: float, summary: str, db: get_db):
     """
     보호자의 카카오톡(나에게 보내기)으로 긴급 알림을 전송합니다.
+    토큰 만료(-401) 에러가 발생하면 자동으로 리프레시 토큰을 이용해 갱신 후 1회 재시도합니다.
     """
     # 1. 토큰 존재 여부 확인
     if not guardian.kakao_access_token:
@@ -85,13 +86,16 @@ async def send_kakao_alert(guardian: Guardian, dependent_name: str, risk_score: 
         return
 
     # 2. DB에 저장된 암호화된 토큰을 원본으로 복호화
-    access_token = decrypt_token(guardian.kakao_access_token)
+    try:
+        access_token = decrypt_token(guardian.kakao_access_token)
+    except Exception as e:
+        print(f"[Kakao Alert Error] 토큰 복호화 실패: {e}")
+        return
 
     # 3. 카카오 '나에게 보내기' API 주소 및 헤더 설정
     url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
     headers = {
         "Authorization": f"Bearer {access_token}",
-        # 카카오는 반드시 아래 Content-Type을 요구합니다.
         "Content-Type": "application/x-www-form-urlencoded" 
     }
 
@@ -107,19 +111,45 @@ async def send_kakao_alert(guardian: Guardian, dependent_name: str, risk_score: 
     }
 
     # API 스펙에 맞게 json 텍스트로 변환하여 data 딕셔너리에 담기
+    # ensure_ascii=False 를 넣으면 한글이 유니코드(\uXXXX)로 깨지지 않고 예쁘게 전송됩니다.
     data = {
-        "template_object": json.dumps(template_object)
+        "template_object": json.dumps(template_object, ensure_ascii=False)
     }
 
-    # 5. 전송 실행
+    # 5. 전송 실행 및 Retry 파이프라인
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, headers=headers, data=data, timeout=10.0)
             res_data = response.json()
             
-            # 카카오 API는 성공하면 결과 코드로 0을 줍니다.
-            if response.status_code == 200 and res_data.get("result_code") == 0:
+            # 토큰 만료(-401) 감지 시 자동 갱신 및 재시도
+            if response.status_code == 401 or res_data.get("code") == -401:
+                print(f"🔄 [Kakao Alert] 토큰 만료 감지(-401). {guardian.name}님의 토큰 갱신을 시도합니다.")
+                
+                # 이전에 만든 리프레시 함수 호출 (내부에서 DB 암호화/저장까지 처리됨)
+                new_access_token = await refresh_kakao_token_procedure(guardian.id, db)
+                
+                if new_access_token:
+                    # 새 토큰으로 헤더 교체
+                    headers["Authorization"] = f"Bearer {new_access_token}"
+                    print(f"🚀 [Kakao Alert] 새 토큰 발급 성공! 재발송을 시도합니다.")
+                    
+                    # 동일한 데이터로 다시 전송
+                    retry_response = await client.post(url, headers=headers, data=data, timeout=10.0)
+                    retry_res_data = retry_response.json()
+                    
+                    if retry_response.status_code == 200 and retry_res_data.get("result_code") == 0:
+                        print(f"[Kakao Alert] 🚨 (Retry) 카카오톡 알림 쏘기 성공! (Target: {guardian.name})")
+                    else:
+                        print(f"[Kakao Alert Error] 재시도 발송 실패: {retry_res_data}")
+                else:
+                    print(f"❌ [Kakao Alert] 리프레시 토큰이 만료되었습니다. {guardian.name}님의 재연동이 필요합니다.")
+                    
+            # 정상 발송 성공 시
+            elif response.status_code == 200 and res_data.get("result_code") == 0:
                 print(f"[Kakao Alert] 🚨 카카오톡 긴급 알림 쏘기 성공! (Target: {guardian.name})")
+                
+            # 토큰 만료가 아닌 다른 카카오 API 에러 시
             else:
                 print(f"[Kakao Alert Error] 발송 실패: {res_data}")
                 

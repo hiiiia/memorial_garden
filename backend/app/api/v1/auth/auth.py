@@ -12,7 +12,7 @@ from db.models import Guardian, GuardianDependentMapping
 from core.config import settings
 from core.response import unified_response
 from api.v1.deps import get_current_user
-from api.v1.utils.security import encrypt_token, verify_password, get_password_hash
+from api.v1.utils.security import encrypt_token, verify_password, get_password_hash, decrypt_token
 from api.v1.utils.jwt import create_access_token
 
 router = APIRouter()
@@ -299,5 +299,62 @@ def kakao_signup(user_data: KakaoSignupRequest, db: Session = Depends(get_db)):
         message="카카오 회원가입이 완료되었습니다.",
         data={"name": new_user.name}
     )
+
+
+async def refresh_kakao_token_procedure(guardian_id: str, db: Session) -> str:
+    """
+    만료된 카카오 액세스 토큰을 리프레시 토큰을 이용해 갱신합니다.
+    성공 시 복호화된 새로운 access_token을 반환하고 DB를 업데이트합니다.
+    """
+    guardian = db.query(Guardian).filter(Guardian.id == guardian_id).first()
+    if not guardian or not guardian.kakao_refresh_token:
+        print(f"🚫 [Kakao Refresh] 보호자({guardian_id})의 리프레시 토큰이 존재하지 않습니다.")
+        return None
+
+    # 1. DB에 저장된 리프레시 토큰 복호화
+    try:
+        decrypted_refresh_token = decrypt_token(guardian.kakao_refresh_token)
+    except Exception as e:
+        print(f"🚨 [Kakao Refresh] 토큰 복호화 실패: {e}")
+        return None
+
+    token_url = "https://kauth.kakao.com/oauth/token"
+    token_data = {
+        "grant_type": "refresh_token",
+        "client_id": settings.KAKAO_REST_API_KEY,
+        "client_secret": getattr(settings, "KAKAO_CLIENT_SECRET", ""),
+        "refresh_token": decrypted_refresh_token
+    }
+
+    headers = {"Content-Type": "application/x-www-form-urlencoded;charset=utf-8"}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(token_url, headers=headers, data=token_data, timeout=10)
+            
+        if response.status_code != 200:
+            print(f"🚨 [Kakao Refresh API Error] 코드: {response.status_code}, 내용: {response.text}")
+            return None
+
+        token_json = response.json()
+        new_access_token = token_json.get("access_token")
+        new_refresh_token = token_json.get("refresh_token")
+
+        if not new_access_token:
+            return None
+
+        # 2. 새로운 토큰들 암호화 후 DB 적재
+        guardian.kakao_access_token = encrypt_token(new_access_token)
+        if new_refresh_token:
+            # 카카오 정책상 리프레시 토큰 잔여 수명이 1달 미만이면 새 리프레시 토큰도 내려줍니다.
+            guardian.kakao_refresh_token = encrypt_token(new_refresh_token)
+
+        db.commit()
+        print(f"✅ [Kakao Refresh] 보호자({guardian.name})의 액세스 토큰 자동 갱신 완료")
+        return new_access_token
+
+    except Exception as e:
+        print(f"🚨 [Kakao Refresh] 통신 중 예외 발생: {e}")
+        return None
 
 #https://kauth.kakao.com/oauth/authorize?client_id=6289718b437796b5e1ed53469a6ac748&redirect_uri=http://localhost:8000/api/v1/auth/kakao/callback&response_type=code

@@ -130,7 +130,8 @@ def alert_emergency(
             guardian=guardian_obj,
             dependent_name=target_name,
             risk_score=risk_score,
-            summary=summary
+            summary=summary,
+            db=db
         )
 
     return {"status": "success", "message": "Emergency alerts dispatched successfully."}

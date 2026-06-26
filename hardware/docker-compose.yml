@@ -49,4 +49,5 @@ services:
       # 윈도우(WSL2) 또는 엣지 환경에서 파일 수정이 즉각 감지되도록 강제하는 필수 옵션
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
-      - WDS_SOCKET_PORT=0
+      - WDS_SOCKET_PORT=
+      - REACT_APP_BACKEND_URL=${BACKEND_URL}
