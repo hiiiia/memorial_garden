@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 // 팀원이 작성한 CSS 파일 경로에 맞게 수정해주세요. (예: import '../css/ElderPage.css';)
-import '../css/Kiosk.css';
+import '../css/Common.css';
+import '../css/HomePage.css';
+import '../css/AiPage.css';
+import '../css/TalkPage.css';
+import '../css/DiaryPage.css';
+import '../css/FinishPage.css';
+import '../css/SendPage.css';
+import '../css/MemoryPage.css';
+import '../css/DetailPage.css';
+import '../css/HelpPage.css';
+import '../css/Popup.css';
 
 type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'memory' | 'send' | 'finish' | 'detail' | 'help';
 type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
@@ -61,7 +71,7 @@ const KioskPage: React.FC = () => {
 
       if (!token) return;
 
-      const response = await fetch("http://192.168.1.82:8000/api/v1/dependent/diary", {
+      const response = await fetch("http://192.168.1.86:8000/api/v1/dependent/diary", {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -99,9 +109,9 @@ const KioskPage: React.FC = () => {
   const todayDiary = diaries.find((diary) => diary.created_at === todayFormatted);
   
   // ==========================================
-  // 4. [나의 추억] 날짜별 그룹핑 + 3개씩 페이징
+  // 4. [나의 추억] 날짜별 그룹핑 + 2개씩 페이징
   // ==========================================
-  const ITEMS_PER_PAGE = 3;
+  const ITEMS_PER_PAGE = 2;
 
   // 상태: 날짜 인덱스와 페이징 인덱스
   const [selectedDateIndex, setSelectedDateIndex] = useState(0); 
@@ -517,7 +527,6 @@ const KioskPage: React.FC = () => {
           )}
 
           <div className="diary-buttons">
-            {todayDiary && <button className="diary-listen-btn">🔊 다시듣기</button>}
             <button className="diary-next-btn" onClick={() => setScreen('send')}>
               ➡ 다음
             </button>
@@ -540,7 +549,7 @@ const KioskPage: React.FC = () => {
                 disabled={selectedDateIndex === uniqueDates.length - 1}
                 className="memory-nav-btn"
               >
-                ◀ 과거로
+                ◀ 이전
               </button>
               <h2 className="memory-nav-date">{currentViewDate}</h2>
               <button 
@@ -548,7 +557,7 @@ const KioskPage: React.FC = () => {
                 disabled={selectedDateIndex === 0}
                 className="memory-nav-btn"
               >
-                최신으로 ▶
+                다음 ▶
               </button>
             </div>
           )}
@@ -567,37 +576,41 @@ const KioskPage: React.FC = () => {
               {visibleMemories.length > 0 ? (
                 visibleMemories.map((memory) => (
                   <div className="memory-item" key={memory.id}>
-                    
-                    <div className="memory-image">
-                      {memory.image_url ? (
-                        <img src={memory.image_url} />
-                      ) : (
-                        <span>🎨</span>
-                      )}
-                    </div>
+  <div className="memory-image">
+    {memory.image_url ? (
+      <img src={memory.image_url} />
+    ) : (
+      <span>🎨</span>
+    )}
+  </div>
 
-                    <div className="memory-action-buttons">
-                      <button
-                        className="memory-send-btn"
-                        onClick={() => {
-                          setSelectedDiary(memory);
-                          setScreen('finish');
-                        }}
-                      >
-                        ✉ 보내기
-                      </button>
+  <div className="memory-info">
+    <h2>{memory.content.slice(0, 8)} 날</h2>
+    <p>{memory.created_at}</p>
+  </div>
 
-                      <button
-                        className="memory-view-btn"
-                        onClick={() => {
-                          setSelectedDiary(memory);
-                          setScreen('detail');
-                        }}
-                      >
-                        🔍 보기
-                      </button>
-                    </div>
-                  </div>
+  <div className="memory-action-buttons">
+    <button
+      className="memory-send-btn"
+      onClick={() => {
+        setSelectedDiary(memory);
+        setScreen('finish');
+      }}
+    >
+      ✉ 보내기
+    </button>
+
+    <button
+      className="memory-view-btn"
+      onClick={() => {
+        setSelectedDiary(memory);
+        setScreen('detail');
+      }}
+    >
+      🔍 보기
+    </button>
+  </div>
+</div>
                 ))
               ) : (
                 <div className="memory-empty">
@@ -640,10 +653,6 @@ const KioskPage: React.FC = () => {
           </div>
 
           <div className="detail-buttons">
-            <button className="detail-listen-btn">
-              🔊 다시듣기
-            </button>
-
             <button
               className="detail-close-btn"
               onClick={() => setScreen('memory')}

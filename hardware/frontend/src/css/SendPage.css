@@ -1,0 +1,72 @@
+.send-card {
+  display: flex;
+  flex-direction: column;
+  padding: 28px 46px;
+  box-sizing: border-box;
+}
+
+.send-title {
+  font-size: 100px;
+  font-weight: 900;
+  text-align: center;
+  margin: 0 0 70px;
+}
+
+.send-content {
+  width: 100%;
+  height: 470px;
+  display: grid;
+  grid-template-columns: 35% 65%;
+  column-gap: 50px;
+  align-items: center;
+}
+
+.send-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.send-envelope {
+  width: 100%;
+  height: 240px;
+  font-size: 170px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.send-question {
+  font-size: 43px;
+  line-height: 1.35;
+  text-align: center;
+  margin: 10px 0 0;
+}
+
+.send-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 50px;
+}
+
+.send-main-btn,
+.send-stop-btn {
+  width: 90%;
+  height: 180px;
+  border-radius: 24px;
+  font-size: 90px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.send-main-btn {
+  background: #f8ad00;
+  color: white;
+  border: none;
+}
+
+.send-stop-btn {
+  background: white;
+  color: black;
+  border: 3px solid #777;
+}

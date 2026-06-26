@@ -1,0 +1,68 @@
+.home-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  height: calc(100% - 40px);
+}
+
+.robot {
+  width: 240px;
+  height: 240px;
+  background: #e8f5dc;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 90px;
+  flex-shrink: 0;
+}
+
+.info {
+  flex: 0 1 auto;
+}
+
+.hello {
+  font-size: 64px;
+  margin: 0;
+}
+
+.info h1 {
+  font-size: 110px;
+  margin: 8px 0;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.sub-text {
+  font-size: 36px;
+  margin: 0 0 26px;
+}
+
+.button-group {
+  display: flex;
+  gap: 14px;
+}
+
+.menu-btn {
+  width: 240px;
+  height: 320px;
+  border: none;
+  border-radius: 24px;
+  color: white;
+  font-size: 48px;
+  font-weight: 900;
+  cursor: pointer;
+  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+}
+
+.help-btn { background: #e85c4a; }
+.talk-btn { background: #7ca84b; }
+.diary-btn { background: #6799cc; }
+.memory-btn { background: #8b63b7; }
