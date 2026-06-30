@@ -34,7 +34,7 @@ const KakaoCallbackPage = ({ setIsLoggedIn }: LoginPageProps) => {
 
         if (response.ok) {
           if (response.status === 202) {
-            alert('카카오 인증 성공! 사용할 아이디를 설정해 주세요.');
+            alert('카카오 인증 성공! 이름을 설정해 주세요.');
             navigate('/signup/extra', { state: { kakaoData: data } });
           } else {
             // 토큰 및 데이터 추출
