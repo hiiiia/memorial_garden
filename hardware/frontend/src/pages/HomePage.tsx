@@ -1,10 +1,17 @@
 import React from 'react';
 
+interface Guardian {
+  mappingId: number;
+  guardianName: string;
+}
+
 interface HomePageProps {
   onEmergency: () => void;
   onTalk: () => void;
   onDiary: () => void;
   onMemory: () => void;
+
+  guardians: Guardian[];
 }
 
 const HomePage: React.FC<HomePageProps> = ({
@@ -12,10 +19,23 @@ const HomePage: React.FC<HomePageProps> = ({
   onTalk,
   onDiary,
   onMemory,
+  guardians,
 }) => {
       return (
     <div className="home-card">
       <div className="logo">🌱 기억정원</div>
+          <div className="connection-box">
+      <div className="connection-avatar">👤</div>
+
+      <div className="connection-text">
+        <div className="connection-name">
+          {guardians.length > 0
+            ? `${guardians.length}명의 보호자 연동중`
+            : '보호자 미연동'}
+        </div>
+      </div>
+    </div>
+
 
       <div className="home-content">
         <div className="robot">🌱</div>
