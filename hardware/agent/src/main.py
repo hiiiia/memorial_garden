@@ -140,8 +140,6 @@ async def cloud_websocket_client():
                         print(f"📥 [클라우드 ➔ HW]: {data}")
                         
                         if data.get('action') == "INIT_SETTINGS":
-                            print(f"📥 [클라우드 ➔ HW]: 초기 데이터 저장완료")
-                            
                             InitData.init_data = data['data']
                             print(f"📥 [클라우드 ➔ HW]: 초기 데이터 저장완료")
                             
