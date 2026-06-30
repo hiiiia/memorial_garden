@@ -7,14 +7,9 @@ import os
 import time
 from config import settings
 from database import db_manager 
-import sounddevice as sd
-import soundfile as sf
-import numpy as np
-import shutil
+from i2s_audio import I2SPlayer, I2SRecorder
 
 
-TEST_MODE = True 
-TEST_INPUT_FILE = "test_1.mp3"  # 실제 테스트용 파일 경로 (미리 준비 필요)
 TEST_INPUT_TEXT = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. 옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구"
 
 ### 도커 환경에서는 계속 변경됨.
@@ -38,6 +33,7 @@ DEPENDENT_NAME = None
 DEVICE_HW_KEY = settings.HW_TOKEN
 DEVICE_AI_KEY = settings.AI_TOKEN
 BASE_DIR = "/app/data"
+AUDIO_ACTION_DIR = os.getenv("AUDIO_ACTION_DIR", os.path.join(BASE_DIR, "audio"))
 
 BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
@@ -158,77 +154,60 @@ async def cloud_websocket_client():
 # [로컬] STT 및 오디오 분석 모듈
 # ==========================================
 def recognize_speech_from_mic():
-    if TEST_MODE:
-        print(f"📝 [TEST] STT 모킹 작동. 고정 텍스트 반환...")
-        return TEST_INPUT_TEXT
-    
-    # 실제 하드웨어 로직 (기존 코드)
-    print("🎙️ [하드웨어] 마이크 활성화. 어르신 말씀 듣는 중...")
+    print("🎙️ [하드웨어] 녹음된 WAV 분석용 텍스트 생성 단계...")
     time.sleep(2) 
-    return "실제 음성 데이터 처리 로직"
+    return os.getenv("HARDWARE_MOCK_STT_TEXT", TEST_INPUT_TEXT)
 
 # ==========================================
 #  [로컬] 오디오 재생 제어
 # ==========================================
 async def play_local_action(action_file: str):
     if not action_file: return
-    print(f"🔊 [Local Audio] 추임새/효과음 재생 (딜레이 0초): {action_file}")
-    await asyncio.sleep(0.1) 
+    if recorder.is_recording:
+        print("[Local Audio] 녹음 중이므로 재생을 생략합니다.")
+        return
+    try:
+        await asyncio.to_thread(player.play, action_file, AUDIO_ACTION_DIR)
+    except Exception as e:
+        print(f"[Local Audio] I2S 재생 실패: {e}")
 
 # ==========================================
-# [테스트 모드] 오디오 녹음 제어 (AudioRecorder)
+# I2S 오디오 녹음 제어 (AudioRecorder)
 # ==========================================
 class AudioRecorder:
     def __init__(self):
         self.is_recording = False
-        self.frames = []
-        self.stream = None
-        self.fs = 16000
+        self.temp_path = None
+        self.recorder = I2SRecorder()
 
     def start_recording(self):
-        if TEST_MODE:
-            print(f"[TEST] 녹음 시작 (시뮬레이션)")
-            self.is_recording = True
-            return
-
-        self.frames = []
+        os.makedirs(BASE_DIR, exist_ok=True)
+        self.temp_path = os.path.join(BASE_DIR, f"recording_{uuid.uuid4().hex[:8]}.wav")
+        self.recorder.start(self.temp_path)
         self.is_recording = True
-        self.stream = sd.InputStream(samplerate=self.fs, channels=1, callback=self.callback)
-        self.stream.start()
-        print("[Edge] 녹음 시작됨...")
+        print("[Edge] I2S 녹음 시작됨...")
 
     def stop_recording(self, wav_name):
         self.is_recording = False
         full_path = os.path.join(BASE_DIR, wav_name)
-        if TEST_MODE:
-            # 1. 파일 존재 여부 확인
-            test_source = os.path.join(BASE_DIR, TEST_INPUT_FILE)
-            if os.path.exists(test_source):
-                print(f"[TEST] 녹음 정지. {TEST_INPUT_FILE} 복사 시작 -> {full_path}")
-                shutil.copy(test_source, full_path) # mp3를 지정된 wav_path로 복사
-                return True, full_path
-            else:
-                print(f"[TEST ERROR] 테스트 파일 없음: {TEST_INPUT_FILE}")
+        try:
+            temp_path = self.recorder.stop()
+            os.replace(temp_path, full_path)
+            if not os.path.exists(full_path) or os.path.getsize(full_path) <= 44:
+                print(f"[Edge] 녹음 WAV 검증 실패: {full_path}")
                 return False, None
-
-        # 실제 하드웨어 로직
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-        
-        if self.frames:
-            recording = np.concatenate(self.frames, axis=0)
-            sf.write(full_path, recording, self.fs)
-            print(f"[Edge] 녹음 종료 및 저장 완료: {full_path}")
+            print(f"[Edge] I2S 녹음 종료 및 저장 완료: {full_path}")
             return True, full_path
-        return False, None
+        except Exception as e:
+            print(f"[Edge] I2S 녹음 종료 실패: {e}")
+            return False, None
 
     def callback(self, indata, frames, time, status):
-        if self.is_recording:
-            self.frames.append(indata.copy())
+        pass
 
 # 전역 객체 생성
 recorder = AudioRecorder()
+player = I2SPlayer()
 
     
 # 전역 비동기 큐 생성
