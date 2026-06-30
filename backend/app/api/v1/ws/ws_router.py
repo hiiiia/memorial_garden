@@ -56,7 +56,10 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
         
         # SQLAlchemy 객체를 JSON 직렬화가 가능한 딕셔너리 리스트로 변환
         serialized_mappings = [
-            mapping.guardian.name if mapping.guardian else "가족"
+            {
+                "mapping_id": mapping.id,
+                "guardian_name": mapping.guardian.name if mapping.guardian else "가족"
+            }
             for mapping in connected_mappings
         ]
 
@@ -64,7 +67,7 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
             "action": "INIT_SETTINGS",
             "data": {
                 "proactive_greeting_enabled": setting.proactive_greeting_enabled,
-                "mapping_guardians": serialized_mappings, # 직렬화된 깔끔한 리스트 삽입
+                "mapping_guardians": serialized_mappings, # 직렬화된 리스트 삽입
             }
         }
         

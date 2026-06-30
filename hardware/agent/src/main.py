@@ -42,6 +42,10 @@ BASE_DIR = "/app/data"
 BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
 
+class InitData:
+    init_data = {}
+    ready_event = asyncio.Event()
+
 active_frontend_ws = None
 
 # ==========================================
@@ -134,9 +138,18 @@ async def cloud_websocket_client():
                     async for message in cloud_ws:
                         data = json.loads(message)
                         print(f"📥 [클라우드 ➔ HW]: {data}")
+                        
+                        if data.get('action') == "INIT_SETTINGS":
+                            print(f"📥 [클라우드 ➔ HW]: 초기 데이터 저장완료")
+                            
+                            InitData.init_data = data['data']
+                            print(f"📥 [클라우드 ➔ HW]: 초기 데이터 저장완료")
+                            
+                            # 이벤트 트리거
+                            InitData.ready_event.set()
+                        
                         if active_frontend_ws is not None:
                             await active_frontend_ws.send(message) # React로 그대로 전달
-                
                 # 2. 송신 루프 (React ➔ 우체통 ➔ 클라우드)
                 async def send_to_cloud():
                     while True:
@@ -333,6 +346,16 @@ async def handle_client(websocket, path="/"):
     active_frontend_ws = websocket
     print("✅ [로컬 WS] React 프론트엔드 연결 성공!")
     
+    print("[로컬 WS] React 프론트엔드 세팅값 수신 대기중")
+    await InitData.ready_event.wait()
+    payload = {
+        "action": "INIT_SETTINGS",
+        "data": InitData.init_data  # 딕셔너리 객체 자체를 전달
+    }
+    
+    await websocket.send(json.dumps(payload))
+    print(f"✅ [로컬 WS] React 프론트엔드 초기 세팅 전송값 완료! : {InitData.init_data}")
+    
     async with aiohttp.ClientSession() as session:
         try:
             async_tasks = set()
@@ -401,7 +424,7 @@ async def handle_client(websocket, path="/"):
                 # 3. 연결 설정시 device token을 react에 전달
                 elif data.get("command") == "get_token":
                     await websocket.send(json.dumps({"token": f"{DEVICE_TOKEN}",
-                                                     "HW_MAC" : f"{HW_MAC_ADDRESS}"
+                                                     "HW_MAC" : f"{HW_MAC_ADDRESS}",
                                                      }))
                     
                     print(f"[React에 토큰 전달 완료]: {DEVICE_TOKEN}")
