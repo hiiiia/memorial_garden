@@ -6,7 +6,7 @@ import { config } from '../config';
 const ExtraSignupPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
+  const [name, setName] = useState('');
   
   // 콜백 페이지에서 넘겨준 카카오 임시 데이터를 꺼냅니다.
   const kakaoResponse = location.state?.kakaoData;
@@ -34,8 +34,8 @@ const ExtraSignupPage = () => {
         body: JSON.stringify({
           kakao_id: String(payload.kakao_id), // 혹시 숫자로 넘어올 경우를 대비해 문자열로 변환
           email: email || "",                 // 비워두면 백엔드에서 더미 이메일을 생성함
-          name: payload.name || `Kakao-${payload.kakao_id}`, // 이름이 없으면 기본값 세팅
-          username: username,                   // 유저가 방금 입력한 아이디,
+          name: name,                          // 유저가 방금 입력한 이름,
+          username: payload.name || `Kakao-${payload.kakao_id}`, // ID 기본값 세팅
           kakao_access_token: payload.temp_kakao_access_token || "",
           kakao_refresh_token: payload.temp_kakao_refresh_token || ""
         }),
@@ -82,12 +82,12 @@ const ExtraSignupPage = () => {
         </div>
         
         <div>
-          <label>사용할 아이디 설정</label>
+          <label>이름을 입력해주세요</label>
           <input 
             type="text" 
-            value={username} 
-            onChange={(e) => setUsername(e.target.value)} 
-            placeholder="아이디를 입력하세요"
+            value={name} 
+            onChange={(e) => setName(e.target.value)} 
+            placeholder="(해당 이름은 연동시 어르신에게 보이게 되는 이름입니다)"
             required 
             style={{ width: '100%', padding: '8px' }} 
           />
