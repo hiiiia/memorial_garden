@@ -7,17 +7,6 @@
   overflow: hidden;
 }
 
-.home-card {
-  width: 100%;
-  height: calc(100vh - 32px);
-  background-color: #fdf9ef;
-  border: 1px solid #ccc;
-  border-radius: 18px;
-  padding: 24px;
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
 .logo {
   color: #4b8b2a;
   font-size: 18px;

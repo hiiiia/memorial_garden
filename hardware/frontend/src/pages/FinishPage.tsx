@@ -16,7 +16,7 @@ const FinishPage: React.FC<FinishPageProps> = ({ onConfirm }) => {
         <div className="finish-family-row">
           <div className="finish-profile">👩</div>
           <p className="finish-family-text">
-            딸(김지현)에게<br />
+            보호자에게<br />
             전송되었습니다.
           </p>
         </div>

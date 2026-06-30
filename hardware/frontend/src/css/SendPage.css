@@ -1,4 +1,5 @@
 .send-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   padding: 28px 46px;
@@ -6,19 +7,19 @@
 }
 
 .send-title {
-  font-size: 100px;
+  font-size: 90px;
   font-weight: 900;
   text-align: center;
-  margin: 0 0 70px;
+  margin: 0 0 35px;
 }
 
 .send-content {
   width: 100%;
-  height: 470px;
+  min-height: 470px;
   display: grid;
-  grid-template-columns: 35% 65%;
+  grid-template-columns: 40% 60%;
   column-gap: 50px;
-  align-items: center;
+  align-items: start;
 }
 
 .send-left {
@@ -29,24 +30,25 @@
 
 .send-envelope {
   width: 100%;
-  height: 240px;
-  font-size: 170px;
+  height: 210px;
+  font-size: 165px;
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
 .send-question {
-  font-size: 43px;
+  font-size: 42px;
   line-height: 1.35;
   text-align: center;
-  margin: 10px 0 0;
+  margin: 5px 0 0;
 }
 
 .send-buttons {
   display: flex;
   flex-direction: column;
   gap: 50px;
+  margin-top: 60px;
 }
 
 .send-main-btn,
@@ -71,21 +73,74 @@
   border: 3px solid #777;
 }
 
-.guardian-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 24px;
+.guardian-empty {
+  font-size: 26px;
+  font-weight: 700;
+  color: #666;
 }
 
-.guardian-select-btn {
-  width: 360px;
-  padding: 18px 24px;
+.guardian-open-btn {
+  width: 380px;
+  height: 100px;
+  margin-top: 28px;
   border: 4px solid #e5e7eb;
   border-radius: 24px;
   background: white;
-  font-size: 28px;
+  font-size: 38px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.guardian-count {
+  font-size: 34px;
   font-weight: 800;
+  margin-top: 18px;
+}
+
+.guardian-modal-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  transform: none;
+}
+
+.guardian-modal {
+  width: 860px;
+  height: 680px;
+  background: #fffdf6;
+  border-radius: 32px;
+  padding: 40px;
+  box-sizing: border-box;
+}
+
+.guardian-modal-title {
+  font-size: 54px;
+  font-weight: 900;
+  text-align: center;
+  margin: 0 0 24px;
+}
+
+.guardian-modal-list {
+  height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 10px;
+}
+
+.guardian-select-btn {
+  width: 100%;
+  min-height: 120px;
+  border: 4px solid #e5e7eb;
+  border-radius: 20px;
+  background: white;
+  font-size: 62px;
+  font-weight: 900;
   cursor: pointer;
 }
 
@@ -94,8 +149,29 @@
   background: #e8f5dc;
 }
 
-.guardian-empty {
-  font-size: 26px;
-  font-weight: 700;
-  color: #666;
+.guardian-modal-buttons {
+  display: flex;
+  gap: 24px;
+  margin-top: 8px;
+}
+
+.guardian-cancel-btn,
+.guardian-confirm-btn {
+  flex: 1;
+  height: 90px;
+  border-radius: 20px;
+  font-size: 40px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.guardian-cancel-btn {
+  background: white;
+  border: 3px solid #777;
+}
+
+.guardian-confirm-btn {
+  background: #f8ad00;
+  color: white;
+  border: none;
 }
