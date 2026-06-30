@@ -4,13 +4,16 @@ import json
 import aiohttp
 import uuid
 import os
-import time
 from config import settings
 from database import db_manager 
 from i2s_audio import I2SPlayer, I2SRecorder
 
 
-TEST_INPUT_TEXT = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. 옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구"
+STT_FAILURE_MESSAGE = "음성 내용을 인식하지 못했습니다. 다시 말씀해 주세요."
+
+
+class SpeechRecognitionError(RuntimeError):
+    pass
 
 ### 도커 환경에서는 계속 변경됨.
 # # ==========================================
@@ -153,10 +156,25 @@ async def cloud_websocket_client():
 # ==========================================
 # [로컬] STT 및 오디오 분석 모듈
 # ==========================================
-def recognize_speech_from_mic():
-    print("🎙️ [하드웨어] 녹음된 WAV 분석용 텍스트 생성 단계...")
-    time.sleep(2) 
-    return os.getenv("HARDWARE_MOCK_STT_TEXT", TEST_INPUT_TEXT)
+async def recognize_speech_from_mic(wav_path: str):
+    print(f"🎙️ [하드웨어] 실제 WAV STT 요청: {wav_path}")
+    loop = asyncio.get_running_loop()
+    stt_future = loop.create_future()
+    await audio_task_queue.put({
+        "wav_path": wav_path,
+        "user_id": DEPENDENT_ID,
+        "stt_future": stt_future
+    })
+
+    try:
+        stt_text = await asyncio.wait_for(stt_future, timeout=60)
+    except Exception as exc:
+        raise SpeechRecognitionError(STT_FAILURE_MESSAGE) from exc
+
+    stt_text = (stt_text or "").strip()
+    if not stt_text:
+        raise SpeechRecognitionError(STT_FAILURE_MESSAGE)
+    return stt_text
 
 # ==========================================
 #  [로컬] 오디오 재생 제어
@@ -232,9 +250,12 @@ async def background_audio_worker():
         wav_path = task_data.get("wav_path")
         user_id = task_data.get("user_id")
         stt_text = task_data.get("stt_text")
+        stt_future = task_data.get("stt_future")
         
         if not os.path.exists(wav_path):
             print(f"[Edge Worker] 오디오 파일 누락: {wav_path}")
+            if stt_future and not stt_future.done():
+                stt_future.set_exception(FileNotFoundError(wav_path))
             audio_task_queue.task_done()
             continue
 
@@ -243,8 +264,6 @@ async def background_audio_worker():
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()
                 data.add_field('user_id', user_id)
-                data.add_field('stt_text', stt_text)
-                data.add_field('file', open(wav_path, 'rb'), filename='input.wav', content_type='audio/wav')
 
                 url = f"{AI_SERVER_URL}/api/v1/analyze/audio"
                 
@@ -255,13 +274,29 @@ async def background_audio_worker():
                 
                 print(f"[Edge Worker] 업로드 시작: {wav_path}")
                 
-                async with session.post(url, data=data, headers=headers) as resp:
-                    if resp.status in (200, 202):
-                        print(f"[Edge Worker] 업로드 성공: {wav_path}")
-                    else:
-                        print(f"[Edge Worker] 서버 업로드 실패: HTTP {resp.status}")
+                with open(wav_path, 'rb') as audio_file:
+                    if stt_text:
+                        data.add_field('stt_text', stt_text)
+                    data.add_field('file', audio_file, filename='input.wav', content_type='audio/wav')
+
+                    async with session.post(url, data=data, headers=headers) as resp:
+                        res_json = await resp.json()
+                        if resp.status in (200, 202):
+                            recognized_text = (res_json.get("stt_text") or stt_text or "").strip()
+                            if stt_future and not stt_future.done():
+                                if recognized_text:
+                                    stt_future.set_result(recognized_text)
+                                else:
+                                    stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))
+                            print(f"[Edge Worker] 업로드 성공: {wav_path}")
+                        else:
+                            if stt_future and not stt_future.done():
+                                stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))
+                            print(f"[Edge Worker] 서버 업로드 실패: HTTP {resp.status}")
 
         except Exception as e:
+            if stt_future and not stt_future.done():
+                stt_future.set_exception(e)
             print(f"[Edge Worker] 통신 중 오류 발생: {e}")
             
         finally:
@@ -333,7 +368,7 @@ async def handle_client(websocket, path="/"):
                             try:
                                 await websocket.send(json.dumps({"status": "processing"}))
                                 
-                                raw_text = await asyncio.to_thread(recognize_speech_from_mic)
+                                raw_text = await recognize_speech_from_mic(wav_file_path)
                                 
                                 search_results = db_manager.search_memory(raw_text, limit=1)
                                 memory_context = ""
@@ -358,12 +393,9 @@ async def handle_client(websocket, path="/"):
                                     "text": ai_response_text
                                 }))
                                 
-                                await audio_task_queue.put({
-                                    "wav_path": wav_file_path,
-                                    "user_id": DEPENDENT_ID,
-                                    "stt_text": raw_text
-                                })
-                                
+                            except SpeechRecognitionError as e:
+                                print(f"[Edge STT 오류]: {e}")
+                                await websocket.send(json.dumps({"status": "error", "message": STT_FAILURE_MESSAGE}))
                             except Exception as e:
                                 print(f"[Edge 프로세스 에러]: {e}")
                                 await websocket.send(json.dumps({"status": "error", "message": "분석 중 오류 발생"}))

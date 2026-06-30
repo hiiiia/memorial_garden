@@ -109,7 +109,18 @@ class AgentMainFlowTests(unittest.TestCase):
     def test_legacy_test_audio_execution_path_is_removed(self):
         source = MAIN_PATH.read_text(encoding="utf-8")
 
-        for token in ("TEST_MODE", "TEST_INPUT_FILE", "test_1.mp3", "sounddevice", "soundfile", "numpy"):
+        for token in (
+            "TEST_MODE",
+            "TEST_INPUT_FILE",
+            "TEST_INPUT_TEXT",
+            "HARDWARE_MOCK_STT_TEXT",
+            "test_1.mp3",
+            "오늘 날씨가",
+            "실제 음성 데이터 처리 로직",
+            "sounddevice",
+            "soundfile",
+            "numpy",
+        ):
             self.assertNotIn(token, source)
 
     def test_force_record_start_stop_preserves_upload_queue_flow(self):
@@ -119,15 +130,22 @@ class AgentMainFlowTests(unittest.TestCase):
             module.recorder = fake_recorder
             module.DEPENDENT_ID = "dependent-test"
             module.audio_task_queue = asyncio.Queue()
-            module.recognize_speech_from_mic = lambda: "mock transcript"
             module.db_manager = FakeDBManager()
+            stt_wav_paths = []
+            route_texts = []
+
+            async def fake_recognize(wav_path):
+                stt_wav_paths.append(wav_path)
+                return "실제 발화 텍스트"
 
             async def fake_route(session, raw_text, memory_context):
+                route_texts.append(raw_text)
                 return {"local_reply": "mock reply", "save_flag": False}
 
             async def fake_play_local_action(action_file):
                 raise AssertionError("local action should not run without local_action")
 
+            module.recognize_speech_from_mic = fake_recognize
             module.get_response_from_ai_server = fake_route
             module.play_local_action = fake_play_local_action
 
@@ -140,14 +158,67 @@ class AgentMainFlowTests(unittest.TestCase):
 
             with patch("builtins.print"):
                 await module.handle_client(websocket)
-            queued = await module.audio_task_queue.get()
 
             self.assertEqual(fake_recorder.start_calls, 1)
             self.assertEqual(fake_recorder.stop_calls, 1)
-            self.assertEqual(queued["wav_path"], "/app/data/audio_test.wav")
-            self.assertEqual(queued["user_id"], "dependent-test")
-            self.assertEqual(queued["stt_text"], "mock transcript")
+            self.assertEqual(stt_wav_paths, ["/app/data/audio_test.wav"])
+            self.assertEqual(route_texts, ["실제 발화 텍스트"])
             self.assertEqual([message["status"] for message in websocket.sent], ["listening", "processing", "speaking", "idle"])
+
+        asyncio.run(scenario())
+
+    def test_recognize_speech_enqueues_wav_path_and_waits_for_stt_result(self):
+        async def scenario():
+            module = load_agent_main()
+            module.audio_task_queue = asyncio.Queue()
+            module.DEPENDENT_ID = "dependent-test"
+
+            with patch("builtins.print"):
+                stt_task = asyncio.create_task(module.recognize_speech_from_mic("/app/data/real.wav"))
+                queued = await module.audio_task_queue.get()
+
+                self.assertEqual(queued["wav_path"], "/app/data/real.wav")
+                self.assertEqual(queued["user_id"], "dependent-test")
+                self.assertNotIn("stt_text", queued)
+
+                queued["stt_future"].set_result("실제 발화")
+                self.assertEqual(await stt_task, "실제 발화")
+
+        asyncio.run(scenario())
+
+    def test_stt_failure_skips_edge_route_and_returns_error_status(self):
+        async def scenario():
+            module = load_agent_main()
+            fake_recorder = FakeRecorder()
+            module.recorder = fake_recorder
+            module.DEPENDENT_ID = "dependent-test"
+            module.db_manager = FakeDBManager()
+            route_called = False
+
+            async def fake_recognize(wav_path):
+                raise module.SpeechRecognitionError(module.STT_FAILURE_MESSAGE)
+
+            async def fake_route(session, raw_text, memory_context):
+                nonlocal route_called
+                route_called = True
+                return {"local_reply": "should not happen", "save_flag": False}
+
+            module.recognize_speech_from_mic = fake_recognize
+            module.get_response_from_ai_server = fake_route
+
+            websocket = FakeWebSocket(
+                [
+                    json.dumps({"command": "force_record"}),
+                    json.dumps({"command": "force_record"}),
+                ]
+            )
+
+            with patch("builtins.print"):
+                await module.handle_client(websocket)
+
+            self.assertFalse(route_called)
+            self.assertEqual([message["status"] for message in websocket.sent], ["listening", "processing", "error", "idle"])
+            self.assertEqual(websocket.sent[2]["message"], module.STT_FAILURE_MESSAGE)
 
         asyncio.run(scenario())
 

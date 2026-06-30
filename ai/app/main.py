@@ -14,6 +14,7 @@ from openai import AsyncOpenAI
 from app.config import settings
 from app.utils.backup import save_failed_callback_to_local
 from app.deps import validate_ai_secret_token
+from app.stt_provider import STTError, ensure_stt_text
 
 
 app = FastAPI(title="기억정원 AI Orchestrator Server")
@@ -127,6 +128,8 @@ async def process_audio_and_shred(file_path: str, user_id: str, stt_text: str, j
     print(f"[AI Server] === 심층 분석 파이프라인 시작 (Job: {job_id}) ===")
     
     try:
+        stt_text = await ensure_stt_text(file_path, stt_text)
+
         # [단계 A] 음향 수치 추출 (CPU 블로킹 방지를 위해 백그라운드 스레드로 실행)
         biomarkers = await asyncio.to_thread(_extract_biomarkers_sync, file_path)
         print(f"[AI Server] 음향 수치 추출 완료: {biomarkers}")
@@ -222,7 +225,7 @@ async def analyze_audio_background(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),         
     user_id: str = Form(...),             
-    stt_text: str = Form(...),
+    stt_text: str = Form(""),
     _ = Depends(validate_ai_secret_token)
 ):
     job_id = uuid.uuid4().hex
@@ -233,15 +236,26 @@ async def analyze_audio_background(
         
     print(f"[AI Server] 백그라운드 분석용 오디오 수신 완료: {file.filename}")
 
+    try:
+        resolved_stt_text = await ensure_stt_text(temp_file_path, stt_text)
+    except STTError as exc:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        print(f"[AI Server] STT 실패: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="음성 내용을 인식하지 못했습니다. 다시 말씀해 주세요.",
+        )
+
     background_tasks.add_task(
         process_audio_and_shred, 
         file_path=temp_file_path, 
         user_id=user_id, 
-        stt_text=stt_text, 
+        stt_text=resolved_stt_text,
         job_id=job_id,
         callback_url=f"{settings.BACKEND_URL}api/v1/callbacks/jobs/analyze-result"
     )
-    return {"message": "Audio processing started in background."}
+    return {"message": "Audio processing started in background.", "stt_text": resolved_stt_text}
 
 
 @app.post("/api/v1/edge/route", summary="Edge Device Real-time Routing & Orchestration")
@@ -366,6 +380,5 @@ async def generate_greeting(
     except Exception as e:
         print(f"🚨 [AI Server] LLM 통신 또는 JSON 파싱 실패: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate greeting via GX10")
-    
     
     
