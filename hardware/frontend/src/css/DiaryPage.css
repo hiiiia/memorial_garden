@@ -65,22 +65,22 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 450px;
+  height: 330px;
   color: #6b7280;
 }
 
 .diary-empty .empty-icon {
-  font-size: 5rem;
+  font-size: 4rem;
   margin-bottom: 1rem;
 }
 
 .diary-empty p {
-  font-size: 2rem;
+  font-size: 1.8rem;
   margin-bottom: 0.5rem;
 }
 
 .diary-empty small {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   color: #9ca3af;
 }
 
@@ -88,12 +88,12 @@
   display: flex;
   justify-content: center;
   gap: 1.5rem;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
 }
 
 .diary-next-btn {
-  padding: 1.2rem 2.5rem;
-  font-size: 4rem;
+  padding: 0.9rem 2.2rem;
+  font-size: 3rem;
   font-weight: bold;
   border-radius: 1rem;
   border: none;
