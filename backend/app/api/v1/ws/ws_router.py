@@ -47,15 +47,29 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
             db.add(setting)
             db.commit()
             db.refresh(setting)
+            
+        # dependent_id와 연결된(CONNECTED) 보호자 매핑 목록 조회
+        connected_mappings = db.query(GuardianDependentMapping).filter(
+            GuardianDependentMapping.dependent_id == dependent_id,
+            GuardianDependentMapping.status == "CONNECTED"
+        ).all()
+        
+        # SQLAlchemy 객체를 JSON 직렬화가 가능한 딕셔너리 리스트로 변환
+        serialized_mappings = [
+            mapping.guardian.name if mapping.guardian else "가족"
+            for mapping in connected_mappings
+        ]
 
         settings_payload = {
             "action": "INIT_SETTINGS",
             "data": {
-                "proactive_greeting_enabled": setting.proactive_greeting_enabled
+                "proactive_greeting_enabled": setting.proactive_greeting_enabled,
+                "mapping_guardians": serialized_mappings, # 직렬화된 깔끔한 리스트 삽입
             }
         }
+        
         await websocket.send_text(json.dumps(settings_payload))
-        print(f"⚙️ [WS] 초기 기기 설정값 전송 완료: {dependent_id}")
+        print(f"⚙️ [WS] 초기 기기 설정값 전송 완료: {dependent_id} :: {connected_mappings}")
         
         # --- [기존] 2. 밀린 연동 요청(PENDING) 팝업 전송 ---
         pending_requests = db.query(GuardianDependentMapping).filter(
