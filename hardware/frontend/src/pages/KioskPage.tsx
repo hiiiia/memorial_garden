@@ -34,6 +34,11 @@ interface Diary {
   created_at: string;
 }
 
+interface Guardian {
+  mappingId: number;
+  guardianName: string;
+}
+
 const KioskPage: React.FC = () => {
   // ==========================================
   // 1. 화면 및 통신 상태 관리
@@ -66,6 +71,8 @@ const KioskPage: React.FC = () => {
     guardianName: '',
     mappingId: null,
   });
+
+  const [guardians, setGuardians] = useState<Guardian[]>([]);
 
   // ==========================================
   // 2. 그림일기(추억) 데이터 상태 관리
@@ -187,6 +194,9 @@ const KioskPage: React.FC = () => {
         const data = JSON.parse(event.data);
 
         console.log('🌟 [React 웹소켓 수신]:', data);
+        console.log('action 확인:', data.action);
+        console.log('data 확인:', data.data);
+        console.log('mapping_guardians 확인:', data.data?.mapping_guardians);
 
         // 보호자 연동 요청이 들어왔을 때 팝업 띄우기
         if (data.action === 'SHOW_PAIRING_POPUP') {
@@ -232,10 +242,19 @@ const KioskPage: React.FC = () => {
           console.log('✅ 토큰이 안전하게 저장되었습니다.');
         }
 
-        if (data.action === 'INIT_SETTINGS') {
-          console.log('⚙️ 기기 초기 설정값 로드 완료:', data.data);
-          setIsGreetingEnabled(data.data.proactive_greeting_enabled);
+      if (data.action === 'INIT_SETTINGS') {
+        console.log('⚙️ 기기 초기 설정값 로드 완료:', data.data);
+        setIsGreetingEnabled(data.data.proactive_greeting_enabled);
+
+        if (data.data.mapping_guardians) {
+          setGuardians(
+            data.data.mapping_guardians.map((guardian: any) => ({
+              mappingId: guardian.mapping_id,
+              guardianName: guardian.guardian_name,
+            }))
+          );
         }
+      }
 
         if (data.action === 'PROACTIVE_GREETING_ARRIVED') {
           console.log('💌 [WS] 안부 메시지 도착:', data.data);
@@ -302,6 +321,23 @@ const KioskPage: React.FC = () => {
       );
 
       setShowPairingPopup(false); // 팝업 닫기
+      setGuardians((prev) => {
+  const alreadyExists = prev.some(
+    (guardian) => guardian.mappingId === pairingData.mappingId
+  );
+
+  if (alreadyExists || pairingData.mappingId === null) {
+    return prev;
+  }
+
+  return [
+    ...prev,
+    {
+      mappingId: pairingData.mappingId,
+      guardianName: pairingData.guardianName,
+    },
+  ];
+});
       alert(`${pairingData.guardianName} 님과 기기가 연결되었습니다!`); // 어르신을 위한 완료 안내
     }
   };
@@ -373,6 +409,7 @@ const KioskPage: React.FC = () => {
             await fetchDiaries(); // 1. 데이터가 도착할 때까지 기다림
             setScreen('memory');  // 2. 다 도착하면 화면을 넘김
           }}
+          guardians={guardians}
         />
       )}
 
@@ -388,20 +425,34 @@ const KioskPage: React.FC = () => {
           aiText={aiText}
           agentState={agentState}
           getStatusText={getStatusText}
-          onStop={() => setScreen('send')}
+          onStop={() => {
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(
+                JSON.stringify({ command: 'stop_record' })
+              );
+            }
+
+            setScreen('send');
+          }}
         />
       )}
 
       {screen === 'send' && (
-        <SendPage
-          onSend={() => setScreen('finish')}
-          onStop={() => setScreen('home')}
-        />
-      )}
+  <SendPage
+    guardians={guardians}
+    onSend={(guardianIds) => {
+      console.log('선택된 보호자 mappingId:', guardianIds);
+      console.log('보낼 일기:', selectedDiary);
 
-      {screen === 'finish' && (
-        <FinishPage onConfirm={() => setScreen('home')} />
-      )}
+      setScreen('finish');
+    }}
+    onStop={() => setScreen('home')}
+  />
+)}
+
+{screen === 'finish' && (
+  <FinishPage onConfirm={() => setScreen('home')} />
+)}
 
       {screen === 'diary' && (
         <DiaryPage
@@ -426,7 +477,7 @@ const KioskPage: React.FC = () => {
           onNextItems={handleNextItems}
           onSelectSend={(diary) => {
             setSelectedDiary(diary);
-            setScreen('finish');
+            setScreen('send');
           }}
           onSelectDetail={(diary) => {
             setSelectedDiary(diary);

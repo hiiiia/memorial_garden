@@ -66,3 +66,42 @@
 .talk-btn { background: #7ca84b; }
 .diary-btn { background: #6799cc; }
 .memory-btn { background: #8b63b7; }
+
+.home-card {
+  position: relative;
+}
+
+.connection-box {
+  position: absolute;
+  top: 28px;
+  right: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  background: white;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.connection-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #ffe5d5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.connection-name {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.connection-status {
+  font-size: 16px;
+  color: #2f8f3a;
+  font-weight: 700;
+}
