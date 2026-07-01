@@ -10,8 +10,8 @@ from typing import Optional
 
 
 DEFAULT_CARD_MATCH = "Google voiceHAT Soundcard"
-DEFAULT_RATE = "48000"
-DEFAULT_FORMAT = "S32_LE"
+DEFAULT_RATE = "16000"
+DEFAULT_FORMAT = "S16_LE"
 
 
 class I2SAudioError(RuntimeError):
