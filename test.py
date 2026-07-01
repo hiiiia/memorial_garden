@@ -7,8 +7,9 @@ client = OpenAI(
 )
 
 # 💡 추천 모델 적용 (Qwen 2.5 3B)
-LLM_MODEL = "qwen2.5:3b"
-
+#LLM_MODEL = "qwen2.5:3b"
+#LLM_MODEL = "gemini-3.5-flash"
+LLM_MODEL = "qwen2.5:7b"
 def get_routing_from_gx10(raw_text):
     print(f"🚀 GX10 서버({LLM_MODEL})로 라우팅 요청 중...")
     
