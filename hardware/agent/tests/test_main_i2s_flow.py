@@ -163,22 +163,31 @@ class AgentMainFlowTests(unittest.TestCase):
             self.assertEqual(fake_recorder.stop_calls, 1)
             self.assertEqual(stt_wav_paths, ["/app/data/audio_test.wav"])
             self.assertEqual(route_texts, ["실제 발화 텍스트"])
-            self.assertEqual([message["status"] for message in websocket.sent], ["listening", "processing", "speaking", "idle"])
+            queued = await module.audio_task_queue.get()
+            self.assertEqual(queued["wav_path"], "/app/data/audio_test.wav")
+            self.assertEqual(queued["user_id"], "dependent-test")
+            self.assertEqual(queued["stt_text"], "실제 발화 텍스트")
+            self.assertEqual(
+                [message["status"] for message in websocket.sent],
+                ["listening", "processing", "processing", "completed", "speaking", "idle"],
+            )
+            self.assertEqual(websocket.sent[2]["type"], "stt_status")
+            self.assertEqual(websocket.sent[3]["type"], "stt_result")
+            self.assertEqual(websocket.sent[3]["text"], "실제 발화 텍스트")
 
         asyncio.run(scenario())
 
     def test_recognize_speech_enqueues_wav_path_and_waits_for_stt_result(self):
         async def scenario():
             module = load_agent_main()
-            module.audio_task_queue = asyncio.Queue()
+            module.stt_task_queue = asyncio.Queue()
             module.DEPENDENT_ID = "dependent-test"
 
             with patch("builtins.print"):
                 stt_task = asyncio.create_task(module.recognize_speech_from_mic("/app/data/real.wav"))
-                queued = await module.audio_task_queue.get()
+                queued = await module.stt_task_queue.get()
 
                 self.assertEqual(queued["wav_path"], "/app/data/real.wav")
-                self.assertEqual(queued["user_id"], "dependent-test")
                 self.assertNotIn("stt_text", queued)
 
                 queued["stt_future"].set_result("실제 발화")
@@ -217,8 +226,13 @@ class AgentMainFlowTests(unittest.TestCase):
                 await module.handle_client(websocket)
 
             self.assertFalse(route_called)
-            self.assertEqual([message["status"] for message in websocket.sent], ["listening", "processing", "error", "idle"])
-            self.assertEqual(websocket.sent[2]["message"], module.STT_FAILURE_MESSAGE)
+            self.assertEqual(
+                [message["status"] for message in websocket.sent],
+                ["listening", "processing", "processing", "failed", "error", "idle"],
+            )
+            self.assertEqual(websocket.sent[3]["type"], "stt_status")
+            self.assertEqual(websocket.sent[3]["message"], "음성을 텍스트로 정리하지 못했습니다.")
+            self.assertEqual(websocket.sent[4]["message"], module.STT_FAILURE_MESSAGE)
 
         asyncio.run(scenario())
 
