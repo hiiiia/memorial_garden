@@ -95,3 +95,99 @@ TEST_MODE = True
 
 ⚠️ WARNING: 상용 배포 전 반드시 TEST_MODE = False로 원복해 주세요!
 
+---
+
+## Raspberry Pi 5 로컬 STT: whisper.cpp
+
+현재 하드웨어 에이전트는 React 화면의 `force_record` 명령으로 I2S 녹음을 시작/종료하고, 녹음된 WAV를 Raspberry Pi 5 로컬의 `whisper.cpp`로 STT 처리합니다. STT는 별도 worker queue에서 1건씩 처리되어 Chromium UI와 버튼 처리 흐름을 막지 않도록 구성되어 있습니다.
+
+### 1. whisper.cpp 빌드
+
+```bash
+cd /home/pi
+git clone https://github.com/ggerganov/whisper.cpp.git
+cd whisper.cpp
+cmake -B build
+cmake --build build -j2
+```
+
+빌드 후 실행 파일 예시는 다음 경로입니다.
+
+```bash
+/home/pi/whisper.cpp/build/bin/whisper-cli
+```
+
+### 2. 한국어 지원 모델 다운로드
+
+`base.en`은 영어 전용이므로 사용하지 마세요. 한국어에는 다국어 `ggml-base.bin`을 사용합니다.
+
+```bash
+cd /home/pi/whisper.cpp
+bash ./models/download-ggml-model.sh base
+ls -lh /home/pi/whisper.cpp/models/ggml-base.bin
+```
+
+### 3. 환경 변수 설정
+
+`hardware/.env`에 아래 값을 설정합니다. 실제 경로가 다르면 Pi의 설치 위치에 맞게 변경하세요.
+
+```env
+WHISPER_CPP_BIN=/home/pi/whisper.cpp/build/bin/whisper-cli
+WHISPER_MODEL_PATH=/home/pi/whisper.cpp/models/ggml-base.bin
+WHISPER_LANGUAGE=ko
+WHISPER_THREADS=3
+WHISPER_NICE=10
+WHISPER_TIMEOUT_SECONDS=180
+```
+
+UI가 버벅이면 먼저 스레드를 줄입니다.
+
+```env
+WHISPER_THREADS=2
+```
+
+### 4. 테스트 WAV 실행
+
+저장소 루트에서:
+
+```bash
+python3 -m hardware.stt_whisper --file /path/to/test.wav
+```
+
+Docker/agent src 경로만 사용하는 환경에서는:
+
+```bash
+cd hardware/agent
+PYTHONPATH=src python3 -m stt_whisper --file /path/to/test.wav
+```
+
+출력에는 WAV 경로, 파일 크기, 시작/종료 시각, 처리 시간, 인식 텍스트 또는 오류 원인이 표시됩니다.
+
+### 5. 실제 에이전트 실행
+
+현재 Docker 구조를 변경하지 않습니다. 기존 실행 방식 그대로 agent를 시작합니다.
+
+```bash
+cd memorial_garden/hardware
+docker compose up -d --build agent
+docker logs -f aicare_agent
+```
+
+주의: Docker 안에서 실행할 경우 `WHISPER_CPP_BIN`과 `WHISPER_MODEL_PATH`는 컨테이너 내부에서 접근 가능한 경로여야 합니다. 이번 작업에서는 Docker Compose mount 구조를 변경하지 않았으므로, `/home/pi/whisper.cpp`가 컨테이너에 보이지 않는 환경에서는 호스트 직접 실행 방식으로 먼저 검증하세요.
+
+호스트에서 직접 실행하는 경우:
+
+```bash
+cd memorial_garden/hardware/agent
+PYTHONPATH=src python3 src/main.py
+```
+
+### 6. 문제 해결
+
+- `whisper-cli` 파일 없음: `WHISPER_CPP_BIN` 경로와 빌드 결과를 확인하세요.
+- 모델 파일 없음: `/home/pi/whisper.cpp/models/ggml-base.bin`이 있는지 확인하세요.
+- 권한 문제: `chmod +x /home/pi/whisper.cpp/build/bin/whisper-cli`를 확인하세요.
+- WAV 포맷 문제: 현재 I2S 녹음은 mono 48kHz S32_LE일 수 있습니다. whisper.cpp는 16kHz mono 16-bit PCM을 권장하므로 로그에 경고가 표시될 수 있습니다. 변환이 필요하면 `ffmpeg` 설치 여부를 먼저 확인하고 별도 변환 단계로 분리하세요.
+- 처리 시간이 너무 길 때: `WHISPER_THREADS=2`로 낮추고, Chromium 탭 수와 백그라운드 프로세스를 줄이세요.
+- UI가 버벅일 때: 기본 명령은 `nice -n 10`으로 실행되어 UI 우선순위를 높입니다. 그래도 느리면 `WHISPER_THREADS=2`를 사용하세요.
+

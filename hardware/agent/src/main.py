@@ -4,18 +4,18 @@ import json
 import aiohttp
 import uuid
 import os
-import time
 from config import settings
 from database import db_manager 
-import sounddevice as sd
-import soundfile as sf
-import numpy as np
-import shutil
+from i2s_audio import I2SPlayer, I2SRecorder
+from stt_whisper import WhisperCppError, WhisperCppTranscriber
 
 
-TEST_MODE = True 
-TEST_INPUT_FILE = "test_1.mp3"  # 실제 테스트용 파일 경로 (미리 준비 필요)
-TEST_INPUT_TEXT = "오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어. 옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구"
+STT_FAILURE_MESSAGE = "음성 내용을 인식하지 못했습니다. 다시 말씀해 주세요."
+STT_PROCESSING_MESSAGE = "말씀을 정리하고 있습니다."
+
+
+class SpeechRecognitionError(RuntimeError):
+    pass
 
 ### 도커 환경에서는 계속 변경됨.
 # # ==========================================
@@ -38,6 +38,7 @@ DEPENDENT_NAME = None
 DEVICE_HW_KEY = settings.HW_TOKEN
 DEVICE_AI_KEY = settings.AI_TOKEN
 BASE_DIR = "/app/data"
+AUDIO_ACTION_DIR = os.getenv("AUDIO_ACTION_DIR", os.path.join(BASE_DIR, "audio"))
 
 BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
@@ -168,82 +169,109 @@ async def cloud_websocket_client():
 # ==========================================
 # [로컬] STT 및 오디오 분석 모듈
 # ==========================================
-def recognize_speech_from_mic():
-    if TEST_MODE:
-        print(f"📝 [TEST] STT 모킹 작동. 고정 텍스트 반환...")
-        return TEST_INPUT_TEXT
-    
-    # 실제 하드웨어 로직 (기존 코드)
-    print("🎙️ [하드웨어] 마이크 활성화. 어르신 말씀 듣는 중...")
-    time.sleep(2) 
-    return "실제 음성 데이터 처리 로직"
+async def recognize_speech_from_mic(wav_path: str):
+    print(f"🎙️ [하드웨어] 실제 WAV STT 요청: {wav_path}")
+    loop = asyncio.get_running_loop()
+    stt_future = loop.create_future()
+    await stt_task_queue.put({
+        "wav_path": wav_path,
+        "stt_future": stt_future
+    })
+
+    try:
+        stt_text = await asyncio.wait_for(stt_future, timeout=60)
+    except Exception as exc:
+        raise SpeechRecognitionError(STT_FAILURE_MESSAGE) from exc
+
+    stt_text = (stt_text or "").strip()
+    if not stt_text:
+        raise SpeechRecognitionError(STT_FAILURE_MESSAGE)
+    return stt_text
 
 # ==========================================
 #  [로컬] 오디오 재생 제어
 # ==========================================
 async def play_local_action(action_file: str):
     if not action_file: return
-    print(f"🔊 [Local Audio] 추임새/효과음 재생 (딜레이 0초): {action_file}")
-    await asyncio.sleep(0.1) 
+    if recorder.is_recording:
+        print("[Local Audio] 녹음 중이므로 재생을 생략합니다.")
+        return
+    try:
+        await asyncio.to_thread(player.play, action_file, AUDIO_ACTION_DIR)
+    except Exception as e:
+        print(f"[Local Audio] I2S 재생 실패: {e}")
 
 # ==========================================
-# [테스트 모드] 오디오 녹음 제어 (AudioRecorder)
+# I2S 오디오 녹음 제어 (AudioRecorder)
 # ==========================================
 class AudioRecorder:
     def __init__(self):
         self.is_recording = False
-        self.frames = []
-        self.stream = None
-        self.fs = 16000
+        self.temp_path = None
+        self.recorder = I2SRecorder()
 
     def start_recording(self):
-        if TEST_MODE:
-            print(f"[TEST] 녹음 시작 (시뮬레이션)")
-            self.is_recording = True
-            return
-
-        self.frames = []
+        os.makedirs(BASE_DIR, exist_ok=True)
+        self.temp_path = os.path.join(BASE_DIR, f"recording_{uuid.uuid4().hex[:8]}.wav")
+        self.recorder.start(self.temp_path)
         self.is_recording = True
-        self.stream = sd.InputStream(samplerate=self.fs, channels=1, callback=self.callback)
-        self.stream.start()
-        print("[Edge] 녹음 시작됨...")
+        print("[Edge] I2S 녹음 시작됨...")
 
     def stop_recording(self, wav_name):
         self.is_recording = False
         full_path = os.path.join(BASE_DIR, wav_name)
-        if TEST_MODE:
-            # 1. 파일 존재 여부 확인
-            test_source = os.path.join(BASE_DIR, TEST_INPUT_FILE)
-            if os.path.exists(test_source):
-                print(f"[TEST] 녹음 정지. {TEST_INPUT_FILE} 복사 시작 -> {full_path}")
-                shutil.copy(test_source, full_path) # mp3를 지정된 wav_path로 복사
-                return True, full_path
-            else:
-                print(f"[TEST ERROR] 테스트 파일 없음: {TEST_INPUT_FILE}")
+        try:
+            temp_path = self.recorder.stop()
+            os.replace(temp_path, full_path)
+            if not os.path.exists(full_path) or os.path.getsize(full_path) <= 44:
+                print(f"[Edge] 녹음 WAV 검증 실패: {full_path}")
                 return False, None
-
-        # 실제 하드웨어 로직
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
-        
-        if self.frames:
-            recording = np.concatenate(self.frames, axis=0)
-            sf.write(full_path, recording, self.fs)
-            print(f"[Edge] 녹음 종료 및 저장 완료: {full_path}")
+            print(f"[Edge] I2S 녹음 종료 및 저장 완료: {full_path}")
             return True, full_path
-        return False, None
+        except Exception as e:
+            print(f"[Edge] I2S 녹음 종료 실패: {e}")
+            return False, None
 
     def callback(self, indata, frames, time, status):
-        if self.is_recording:
-            self.frames.append(indata.copy())
+        pass
 
 # 전역 객체 생성
 recorder = AudioRecorder()
+player = I2SPlayer()
+stt_transcriber = WhisperCppTranscriber.from_env()
 
     
 # 전역 비동기 큐 생성
 audio_task_queue = asyncio.Queue()
+stt_task_queue = asyncio.Queue()
+
+
+# ==========================================
+# [로컬] Whisper.cpp STT 워커 (단일 실행)
+# ==========================================
+async def stt_worker():
+    print("[STT Worker] whisper.cpp STT 워커 대기 중...")
+
+    while True:
+        task_data = await stt_task_queue.get()
+        wav_path = task_data.get("wav_path")
+        stt_future = task_data.get("stt_future")
+
+        try:
+            result = await asyncio.to_thread(stt_transcriber.transcribe, wav_path)
+            if stt_future and not stt_future.done():
+                stt_future.set_result(result.text)
+            print(f"[STT Worker] STT 완료: {result.text[:80]}")
+        except WhisperCppError as e:
+            if stt_future and not stt_future.done():
+                stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))
+            print(f"[STT Worker] whisper.cpp STT 실패({e.code}): {e}")
+        except Exception as e:
+            if stt_future and not stt_future.done():
+                stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))
+            print(f"[STT Worker] STT 처리 중 오류: {e}")
+        finally:
+            stt_task_queue.task_done()
 
 
 # ==========================================
@@ -275,8 +303,6 @@ async def background_audio_worker():
             async with aiohttp.ClientSession() as session:
                 data = aiohttp.FormData()
                 data.add_field('user_id', user_id)
-                data.add_field('stt_text', stt_text)
-                data.add_field('file', open(wav_path, 'rb'), filename='input.wav', content_type='audio/wav')
 
                 url = f"{AI_SERVER_URL}/api/v1/analyze/audio"
                 
@@ -287,11 +313,15 @@ async def background_audio_worker():
                 
                 print(f"[Edge Worker] 업로드 시작: {wav_path}")
                 
-                async with session.post(url, data=data, headers=headers) as resp:
-                    if resp.status in (200, 202):
-                        print(f"[Edge Worker] 업로드 성공: {wav_path}")
-                    else:
-                        print(f"[Edge Worker] 서버 업로드 실패: HTTP {resp.status}")
+                with open(wav_path, 'rb') as audio_file:
+                    data.add_field('stt_text', stt_text or "")
+                    data.add_field('file', audio_file, filename='input.wav', content_type='audio/wav')
+
+                    async with session.post(url, data=data, headers=headers) as resp:
+                        if resp.status in (200, 202):
+                            print(f"[Edge Worker] 업로드 성공: {wav_path}")
+                        else:
+                            print(f"[Edge Worker] 서버 업로드 실패: HTTP {resp.status}")
 
         except Exception as e:
             print(f"[Edge Worker] 통신 중 오류 발생: {e}")
@@ -374,8 +404,19 @@ async def handle_client(websocket, path="/"):
                             # [안전장치] 전체 프로세스를 try-except로 감싸서 UI가 멈추지 않게 함
                             try:
                                 await websocket.send(json.dumps({"status": "processing"}))
+                                await websocket.send(json.dumps({
+                                    "type": "stt_status",
+                                    "status": "processing",
+                                    "message": STT_PROCESSING_MESSAGE
+                                }))
                                 
-                                raw_text = await asyncio.to_thread(recognize_speech_from_mic)
+                                raw_text = await recognize_speech_from_mic(wav_file_path)
+                                await websocket.send(json.dumps({
+                                    "type": "stt_result",
+                                    "status": "completed",
+                                    "text": raw_text,
+                                    "wav_path": wav_file_path
+                                }))
                                 
                                 search_results = db_manager.search_memory(raw_text, limit=1)
                                 memory_context = ""
@@ -399,13 +440,21 @@ async def handle_client(websocket, path="/"):
                                     "type": "AI_RESPONSE",
                                     "text": ai_response_text
                                 }))
-                                
+
                                 await audio_task_queue.put({
                                     "wav_path": wav_file_path,
                                     "user_id": DEPENDENT_ID,
                                     "stt_text": raw_text
                                 })
                                 
+                            except SpeechRecognitionError as e:
+                                print(f"[Edge STT 오류]: {e}")
+                                await websocket.send(json.dumps({
+                                    "type": "stt_status",
+                                    "status": "failed",
+                                    "message": "음성을 텍스트로 정리하지 못했습니다."
+                                }))
+                                await websocket.send(json.dumps({"status": "error", "message": STT_FAILURE_MESSAGE}))
                             except Exception as e:
                                 print(f"[Edge 프로세스 에러]: {e}")
                                 await websocket.send(json.dumps({"status": "error", "message": "분석 중 오류 발생"}))
@@ -451,6 +500,7 @@ async def main():
     
     # 1. 백그라운드 오디오 워커 실행 (기존)
     worker_task = asyncio.create_task(background_audio_worker())
+    stt_worker_task = asyncio.create_task(stt_worker())
     
     # ==========================================================
     # 2. 클라우드 백엔드 통신용 웹소켓 클라이언트 백그라운드 실행
@@ -465,6 +515,7 @@ async def main():
     
     # 종료 처리 (서버가 닫힐 때)
     worker_task.cancel()
+    stt_worker_task.cancel()
     cloud_ws_task.cancel()  # 클라우드 웹소켓 태스크도 함께 종료되도록 추가
 
 if __name__ == "__main__":
