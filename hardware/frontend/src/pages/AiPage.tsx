@@ -1,6 +1,6 @@
 import React from 'react';
 
-type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
+type AgentState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
 interface AiPageProps {
   aiText: string;
