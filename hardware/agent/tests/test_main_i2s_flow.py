@@ -94,6 +94,8 @@ def load_agent_main():
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+    module.InitData.init_data = {}
+    module.InitData.ready_event.set()
     return module
 
 
@@ -167,13 +169,15 @@ class AgentMainFlowTests(unittest.TestCase):
             self.assertEqual(queued["wav_path"], "/app/data/audio_test.wav")
             self.assertEqual(queued["user_id"], "dependent-test")
             self.assertEqual(queued["stt_text"], "실제 발화 텍스트")
+            status_messages = [message for message in websocket.sent if "status" in message]
             self.assertEqual(
-                [message["status"] for message in websocket.sent],
+                [message["status"] for message in status_messages],
                 ["listening", "processing", "processing", "completed", "speaking", "idle"],
             )
-            self.assertEqual(websocket.sent[2]["type"], "stt_status")
-            self.assertEqual(websocket.sent[3]["type"], "stt_result")
-            self.assertEqual(websocket.sent[3]["text"], "실제 발화 텍스트")
+            stt_status = next(message for message in websocket.sent if message.get("type") == "stt_status")
+            stt_result = next(message for message in websocket.sent if message.get("type") == "stt_result")
+            self.assertEqual(stt_status["status"], "processing")
+            self.assertEqual(stt_result["text"], "실제 발화 텍스트")
 
         asyncio.run(scenario())
 
@@ -226,13 +230,56 @@ class AgentMainFlowTests(unittest.TestCase):
                 await module.handle_client(websocket)
 
             self.assertFalse(route_called)
+            status_messages = [message for message in websocket.sent if "status" in message]
             self.assertEqual(
-                [message["status"] for message in websocket.sent],
+                [message["status"] for message in status_messages],
                 ["listening", "processing", "processing", "failed", "error", "idle"],
             )
-            self.assertEqual(websocket.sent[3]["type"], "stt_status")
-            self.assertEqual(websocket.sent[3]["message"], "음성을 텍스트로 정리하지 못했습니다.")
-            self.assertEqual(websocket.sent[4]["message"], module.STT_FAILURE_MESSAGE)
+            stt_failed = next(
+                message for message in websocket.sent
+                if message.get("type") == "stt_status" and message.get("status") == "failed"
+            )
+            error_status = next(message for message in websocket.sent if message.get("status") == "error")
+            self.assertEqual(stt_failed["message"], "음성을 텍스트로 정리하지 못했습니다.")
+            self.assertEqual(error_status["message"], module.STT_FAILURE_MESSAGE)
+
+        asyncio.run(scenario())
+
+    def test_explicit_stop_record_stops_current_recording_once(self):
+        async def scenario():
+            module = load_agent_main()
+            fake_recorder = FakeRecorder()
+            module.recorder = fake_recorder
+            module.DEPENDENT_ID = "dependent-test"
+            module.audio_task_queue = asyncio.Queue()
+            module.db_manager = FakeDBManager()
+            stt_wav_paths = []
+
+            async def fake_recognize(wav_path):
+                stt_wav_paths.append(wav_path)
+                return "명시적 종료 발화"
+
+            async def fake_route(session, raw_text, memory_context):
+                return {"local_reply": "mock reply", "save_flag": False}
+
+            module.recognize_speech_from_mic = fake_recognize
+            module.get_response_from_ai_server = fake_route
+
+            websocket = FakeWebSocket(
+                [
+                    json.dumps({"command": "force_record"}),
+                    json.dumps({"command": "stop_record"}),
+                ]
+            )
+
+            with patch("builtins.print"):
+                await module.handle_client(websocket)
+
+            self.assertEqual(fake_recorder.start_calls, 1)
+            self.assertEqual(fake_recorder.stop_calls, 1)
+            self.assertEqual(stt_wav_paths, ["/app/data/audio_test.wav"])
+            queued = await module.audio_task_queue.get()
+            self.assertEqual(queued["stt_text"], "명시적 종료 발화")
 
         asyncio.run(scenario())
 

@@ -121,6 +121,42 @@ class SherpaSttModuleTests(unittest.TestCase):
         self.assertEqual(info.sample_width_bytes, 2)
         self.assertAlmostEqual(info.duration_seconds, 1.0, places=2)
 
+    def test_inspect_wav_uses_actual_pcm_length_when_header_frame_count_is_placeholder(self):
+        class FakeWaveFile:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def getnchannels(self):
+                return 1
+
+            def getsampwidth(self):
+                return 2
+
+            def getframerate(self):
+                return 16000
+
+            def getnframes(self):
+                return 1_073_741_760
+
+            def getcomptype(self):
+                return "NONE"
+
+            def readframes(self, _frames):
+                return b"\x00\x00" * 16000 * 12
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            wav_path = Path(tmp_dir) / "placeholder.wav"
+            wav_path.write_bytes(b"0" * 4096)
+
+            with patch("stt_sherpa.wave.open", return_value=FakeWaveFile()):
+                info = stt_sherpa.inspect_wav(wav_path)
+
+        self.assertEqual(info.frames, 16000 * 12)
+        self.assertAlmostEqual(info.duration_seconds, 12.0, places=2)
+
     def test_inspect_wav_rejects_non_16bit_pcm(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             wav_path = Path(tmp_dir) / "sample.wav"

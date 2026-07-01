@@ -389,12 +389,25 @@ async def handle_client(websocket, path="/"):
             async_tasks = set()
             async for message in websocket:
                 data = json.loads(message)
+                command = data.get("command")
                 
                 # 1. 로컬 하드웨어 제어 명령
-                if data.get("command") == "force_record":
-                    if not recorder.is_recording:
+                if command in ("force_record", "start_record", "stop_record"):
+                    if command in ("force_record", "start_record") and not recorder.is_recording:
                         recorder.start_recording()
                         await websocket.send(json.dumps({"status": "listening"}))
+                    elif command == "start_record" and recorder.is_recording:
+                        await websocket.send(json.dumps({
+                            "type": "recording_status",
+                            "status": "listening",
+                            "message": "이미 녹음 중입니다."
+                        }))
+                    elif command == "stop_record" and not recorder.is_recording:
+                        await websocket.send(json.dumps({
+                            "type": "recording_status",
+                            "status": "idle",
+                            "message": "녹음 중이 아닙니다."
+                        }))
                     else:
                         unique_id = uuid.uuid4().hex[:8]
                         wav_file_path = f"audio_{unique_id}.wav"

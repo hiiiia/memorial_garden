@@ -25,7 +25,7 @@ import HelpPage from './HelpPage';
 import Popup from './Popup';
 
 type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'memory' | 'send' | 'finish' | 'detail' | 'help';
-type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
+type AgentState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
 interface Diary {
   id: string | number;
@@ -49,6 +49,7 @@ const KioskPage: React.FC = () => {
   // 파이썬 에이전트 통신 상태
   const [agentState, setAgentState] = useState<AgentState>('idle');
   const [wsConnected, setWsConnected] = useState<boolean>(false);
+  const [recordCommandPending, setRecordCommandPending] = useState<boolean>(false);
   const [aiText, setAiText] = useState<string>(
     '안녕하세요 어르신\n오늘은 어떤 하루를\n보내셨나요?'
   );
@@ -217,6 +218,9 @@ const KioskPage: React.FC = () => {
 
         if (data.status) {
           setAgentState(data.status);
+          if (['listening', 'processing', 'idle', 'error'].includes(data.status)) {
+            setRecordCommandPending(false);
+          }
 
           // 수정됨: 함수형 업데이트를 사용하여 항상 최신 화면 상태(prev)를 확인합니다.
           // 이렇게 하면 의존성 배열에 screen을 넣지 않아도 안전하게 비교할 수 있습니다
@@ -279,6 +283,7 @@ const KioskPage: React.FC = () => {
 
       ws.onclose = () => {
         setWsConnected(false);
+        setRecordCommandPending(false);
         setTimeout(connectWebSocket, 3000);
       };
 
@@ -297,11 +302,13 @@ const KioskPage: React.FC = () => {
 
   // 🎤 '말하기' 버튼 클릭 시 실행되는 함수
   const handleStartTalk = () => {
+    if (recordCommandPending || agentState === 'listening') return;
     setScreen('ai'); // AI 화면으로 넘기기
 
     // 수정됨: wsConnected 대신 실제 웹소켓의 연결 상태(readyState)를 확인합니다.
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // 파이썬 쪽으로 강제 녹음 시작 명령 전송
+      setRecordCommandPending(true);
       wsRef.current.send(JSON.stringify({ command: 'force_record' }));
     } else {
       console.warn('⏳ 웹소켓 연결을 기다리는 중입니다. 잠시 후 다시 눌러주세요.');
@@ -417,6 +424,7 @@ const KioskPage: React.FC = () => {
         <TalkPage
           onStartTalk={handleStartTalk}
           onClose={() => setScreen('home')}
+          isBusy={recordCommandPending || agentState === 'listening'}
         />
       )}
 
@@ -426,14 +434,17 @@ const KioskPage: React.FC = () => {
           agentState={agentState}
           getStatusText={getStatusText}
           onStop={() => {
+            if (recordCommandPending || agentState !== 'listening') return;
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              setRecordCommandPending(true);
               wsRef.current.send(
                 JSON.stringify({ command: 'stop_record' })
               );
+            } else {
+              setRecordCommandPending(false);
             }
-
-            setScreen('send');
           }}
+          isStopDisabled={recordCommandPending || agentState !== 'listening'}
         />
       )}
 

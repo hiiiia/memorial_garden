@@ -155,8 +155,11 @@ def inspect_wav(wav_path: str | Path) -> WavInfo:
             channels = wav_file.getnchannels()
             sample_width_bytes = wav_file.getsampwidth()
             sample_rate = wav_file.getframerate()
-            frames = wav_file.getnframes()
+            header_frames = wav_file.getnframes()
             compression = wav_file.getcomptype()
+            frame_bytes = max(1, channels * sample_width_bytes)
+            raw_pcm = wav_file.readframes(header_frames)
+            frames = len(raw_pcm) // frame_bytes
     except wave.Error as exc:
         raise SherpaSttError(f"PCM WAV 파일을 읽지 못했습니다: {exc}", code="INVALID_WAV") from exc
 
@@ -171,6 +174,12 @@ def inspect_wav(wav_path: str | Path) -> WavInfo:
         )
     if sample_rate <= 0:
         raise SherpaSttError(f"WAV sample rate가 올바르지 않습니다: {sample_rate}", code="INVALID_SAMPLE_RATE")
+
+    if frames != header_frames:
+        print(
+            f"[STT] WAV header frame count 보정: "
+            f"header_frames={header_frames}, actual_frames={frames}"
+        )
 
     duration_seconds = frames / float(sample_rate)
     if duration_seconds <= 0.2:
@@ -215,6 +224,7 @@ class SherpaOnnxKoreanTranscriber:
         if self._recognizer is not None:
             return self._recognizer, False
 
+        load_started_at = time.perf_counter()
         try:
             import sherpa_onnx
         except ImportError as exc:
@@ -242,6 +252,7 @@ class SherpaOnnxKoreanTranscriber:
             decoding_method=self.config.decoding_method,
             debug=False,
         )
+        print(f"[STT] model_load={time.perf_counter() - load_started_at:.2f}s")
         return self._recognizer, True
 
     def _get_recognizer(self):
