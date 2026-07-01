@@ -7,7 +7,7 @@ import os
 from config import settings
 from database import db_manager 
 from i2s_audio import I2SPlayer, I2SRecorder
-from stt_whisper import WhisperCppError, WhisperCppTranscriber
+from stt_sherpa import SherpaOnnxKoreanTranscriber, SherpaSttError
 
 
 STT_FAILURE_MESSAGE = "음성 내용을 인식하지 못했습니다. 다시 말씀해 주세요."
@@ -227,7 +227,7 @@ class AudioRecorder:
 # 전역 객체 생성
 recorder = AudioRecorder()
 player = I2SPlayer()
-stt_transcriber = WhisperCppTranscriber.from_env()
+stt_transcriber = SherpaOnnxKoreanTranscriber.from_env()
 
     
 # 전역 비동기 큐 생성
@@ -236,10 +236,10 @@ stt_task_queue = asyncio.Queue()
 
 
 # ==========================================
-# [로컬] Whisper.cpp STT 워커 (단일 실행)
+# [로컬] Sherpa-ONNX STT 워커 (단일 실행)
 # ==========================================
 async def stt_worker():
-    print("[STT Worker] whisper.cpp STT 워커 대기 중...")
+    print("[STT Worker] sherpa-onnx STT 워커 대기 중...")
 
     while True:
         task_data = await stt_task_queue.get()
@@ -251,10 +251,10 @@ async def stt_worker():
             if stt_future and not stt_future.done():
                 stt_future.set_result(result.text)
             print(f"[STT Worker] STT 완료: {result.text[:80]}")
-        except WhisperCppError as e:
+        except SherpaSttError as e:
             if stt_future and not stt_future.done():
                 stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))
-            print(f"[STT Worker] whisper.cpp STT 실패({e.code}): {e}")
+            print(f"[STT Worker] sherpa-onnx STT 실패({e.code}): {e}")
         except Exception as e:
             if stt_future and not stt_future.done():
                 stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))

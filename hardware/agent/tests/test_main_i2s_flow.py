@@ -239,7 +239,9 @@ class AgentMainFlowTests(unittest.TestCase):
     def test_no_new_stt_tts_dependencies_were_added(self):
         requirements = (AGENT_DIR / "requirements.txt").read_text(encoding="utf-8").casefold()
 
-        for package_name in ("faster-whisper", "edge-tts"):
+        self.assertIn("sherpa-onnx", requirements)
+
+        for package_name in ("faster-whisper", "edge-tts", "torch"):
             self.assertNotIn(package_name, requirements)
 
 
