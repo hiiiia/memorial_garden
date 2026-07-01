@@ -83,6 +83,7 @@ const KioskPage: React.FC = () => {
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const emptyRecordingResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 백엔드에서 일기 데이터 불러오기
   const fetchDiaries = async () => {
@@ -221,6 +222,18 @@ const KioskPage: React.FC = () => {
           if (['listening', 'processing', 'idle', 'error'].includes(data.status)) {
             setRecordCommandPending(false);
           }
+          if (data.status === 'error' && data.message) {
+            setAiText(String(data.message));
+            if (emptyRecordingResetTimerRef.current) {
+              clearTimeout(emptyRecordingResetTimerRef.current);
+            }
+            emptyRecordingResetTimerRef.current = setTimeout(() => {
+              setAgentState('idle');
+              setRecordCommandPending(false);
+              setScreen('talk');
+              emptyRecordingResetTimerRef.current = null;
+            }, 2000);
+          }
 
           // 수정됨: 함수형 업데이트를 사용하여 항상 최신 화면 상태(prev)를 확인합니다.
           // 이렇게 하면 의존성 배열에 screen을 넣지 않아도 안전하게 비교할 수 있습니다
@@ -295,6 +308,9 @@ const KioskPage: React.FC = () => {
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
+      }
+      if (emptyRecordingResetTimerRef.current) {
+        clearTimeout(emptyRecordingResetTimerRef.current);
       }
     };
     // 수정됨: screen을 빼고 빈 배열로 두어, 화면이 바뀌어도 웹소켓이 끊기지 않게 합니다.
@@ -399,6 +415,7 @@ const KioskPage: React.FC = () => {
     if (agentState === 'listening') return '말씀을 듣고 있어요...';
     if (agentState === 'processing') return '생각하는 중이에요...';
     if (agentState === 'speaking') return '이야기하고 있어요...';
+    if (agentState === 'error') return '다시 말씀해 주세요.';
     return '대기 중...';
   };
 

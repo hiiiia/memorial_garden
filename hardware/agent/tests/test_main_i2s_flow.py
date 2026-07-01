@@ -240,7 +240,7 @@ class AgentMainFlowTests(unittest.TestCase):
                 if message.get("type") == "stt_status" and message.get("status") == "failed"
             )
             error_status = next(message for message in websocket.sent if message.get("status") == "error")
-            self.assertEqual(stt_failed["message"], "음성을 텍스트로 정리하지 못했습니다.")
+            self.assertEqual(stt_failed["message"], module.STT_FAILURE_MESSAGE)
             self.assertEqual(error_status["message"], module.STT_FAILURE_MESSAGE)
 
         asyncio.run(scenario())
