@@ -3,11 +3,13 @@ import React from 'react';
 interface TalkPageProps {
   onStartTalk: () => void;
   onClose: () => void;
+  isBusy?: boolean;
 }
 
 const TalkPage: React.FC<TalkPageProps> = ({
   onStartTalk,
   onClose,
+  isBusy = false,
 }) => {
   return (
     <div className="home-card talk-card">
@@ -19,6 +21,7 @@ const TalkPage: React.FC<TalkPageProps> = ({
           type="button"
           className="talk-main-btn"
           onClick={onStartTalk}
+          disabled={isBusy}
         >
           🎤 말하기
         </button>

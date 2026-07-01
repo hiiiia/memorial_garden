@@ -27,6 +27,7 @@ uploads/
 *.mp3
 *.log
 node_modules/
+hardware/models/
 
 node_modules/
 # =========================

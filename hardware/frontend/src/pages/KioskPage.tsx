@@ -25,7 +25,7 @@ import HelpPage from './HelpPage';
 import Popup from './Popup';
 
 type Screen = 'home' | 'talk' | 'ai' | 'diary' | 'memory' | 'send' | 'finish' | 'detail' | 'help';
-type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
+type AgentState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
 interface Diary {
   id: string | number;
@@ -49,6 +49,7 @@ const KioskPage: React.FC = () => {
   // 파이썬 에이전트 통신 상태
   const [agentState, setAgentState] = useState<AgentState>('idle');
   const [wsConnected, setWsConnected] = useState<boolean>(false);
+  const [recordCommandPending, setRecordCommandPending] = useState<boolean>(false);
   const [aiText, setAiText] = useState<string>(
     '안녕하세요 어르신\n오늘은 어떤 하루를\n보내셨나요?'
   );
@@ -82,6 +83,7 @@ const KioskPage: React.FC = () => {
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const emptyRecordingResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 백엔드에서 일기 데이터 불러오기
   const fetchDiaries = async () => {
@@ -217,6 +219,21 @@ const KioskPage: React.FC = () => {
 
         if (data.status) {
           setAgentState(data.status);
+          if (['listening', 'processing', 'idle', 'error'].includes(data.status)) {
+            setRecordCommandPending(false);
+          }
+          if (data.status === 'error' && data.message) {
+            setAiText(String(data.message));
+            if (emptyRecordingResetTimerRef.current) {
+              clearTimeout(emptyRecordingResetTimerRef.current);
+            }
+            emptyRecordingResetTimerRef.current = setTimeout(() => {
+              setAgentState('idle');
+              setRecordCommandPending(false);
+              setScreen('talk');
+              emptyRecordingResetTimerRef.current = null;
+            }, 2000);
+          }
 
           // 수정됨: 함수형 업데이트를 사용하여 항상 최신 화면 상태(prev)를 확인합니다.
           // 이렇게 하면 의존성 배열에 screen을 넣지 않아도 안전하게 비교할 수 있습니다
@@ -279,6 +296,7 @@ const KioskPage: React.FC = () => {
 
       ws.onclose = () => {
         setWsConnected(false);
+        setRecordCommandPending(false);
         setTimeout(connectWebSocket, 3000);
       };
 
@@ -291,17 +309,22 @@ const KioskPage: React.FC = () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      if (emptyRecordingResetTimerRef.current) {
+        clearTimeout(emptyRecordingResetTimerRef.current);
+      }
     };
     // 수정됨: screen을 빼고 빈 배열로 두어, 화면이 바뀌어도 웹소켓이 끊기지 않게 합니다.
   }, []);
 
   // 🎤 '말하기' 버튼 클릭 시 실행되는 함수
   const handleStartTalk = () => {
+    if (recordCommandPending || agentState === 'listening') return;
     setScreen('ai'); // AI 화면으로 넘기기
 
     // 수정됨: wsConnected 대신 실제 웹소켓의 연결 상태(readyState)를 확인합니다.
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       // 파이썬 쪽으로 강제 녹음 시작 명령 전송
+      setRecordCommandPending(true);
       wsRef.current.send(JSON.stringify({ command: 'force_record' }));
     } else {
       console.warn('⏳ 웹소켓 연결을 기다리는 중입니다. 잠시 후 다시 눌러주세요.');
@@ -392,6 +415,7 @@ const KioskPage: React.FC = () => {
     if (agentState === 'listening') return '말씀을 듣고 있어요...';
     if (agentState === 'processing') return '생각하는 중이에요...';
     if (agentState === 'speaking') return '이야기하고 있어요...';
+    if (agentState === 'error') return '다시 말씀해 주세요.';
     return '대기 중...';
   };
 
@@ -417,6 +441,7 @@ const KioskPage: React.FC = () => {
         <TalkPage
           onStartTalk={handleStartTalk}
           onClose={() => setScreen('home')}
+          isBusy={recordCommandPending || agentState === 'listening'}
         />
       )}
 
@@ -426,14 +451,17 @@ const KioskPage: React.FC = () => {
           agentState={agentState}
           getStatusText={getStatusText}
           onStop={() => {
+            if (recordCommandPending || agentState !== 'listening') return;
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              setRecordCommandPending(true);
               wsRef.current.send(
                 JSON.stringify({ command: 'stop_record' })
               );
+            } else {
+              setRecordCommandPending(false);
             }
-
-            setScreen('send');
           }}
+          isStopDisabled={recordCommandPending || agentState !== 'listening'}
         />
       )}
 

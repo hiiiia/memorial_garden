@@ -11,3 +11,4 @@ sentence-transformers
 sounddevice
 soundfile
 numpy
+sherpa-onnx==1.13.2

@@ -7,10 +7,11 @@ import os
 from config import settings
 from database import db_manager 
 from i2s_audio import I2SPlayer, I2SRecorder
-from stt_whisper import WhisperCppError, WhisperCppTranscriber
+from stt_sherpa import SherpaOnnxKoreanTranscriber, SherpaSttError
 
 
 STT_FAILURE_MESSAGE = "음성 내용을 인식하지 못했습니다. 다시 말씀해 주세요."
+NO_SPEECH_MESSAGE = "말씀이 들리지 않았습니다. 다시 말씀해 주세요."
 STT_PROCESSING_MESSAGE = "말씀을 정리하고 있습니다."
 
 
@@ -180,6 +181,8 @@ async def recognize_speech_from_mic(wav_path: str):
 
     try:
         stt_text = await asyncio.wait_for(stt_future, timeout=60)
+    except SpeechRecognitionError:
+        raise
     except Exception as exc:
         raise SpeechRecognitionError(STT_FAILURE_MESSAGE) from exc
 
@@ -238,7 +241,7 @@ class AudioRecorder:
 # 전역 객체 생성
 recorder = AudioRecorder()
 player = I2SPlayer()
-stt_transcriber = WhisperCppTranscriber.from_env()
+stt_transcriber = SherpaOnnxKoreanTranscriber.from_env()
 
     
 # 전역 비동기 큐 생성
@@ -247,10 +250,10 @@ stt_task_queue = asyncio.Queue()
 
 
 # ==========================================
-# [로컬] Whisper.cpp STT 워커 (단일 실행)
+# [로컬] Sherpa-ONNX STT 워커 (단일 실행)
 # ==========================================
 async def stt_worker():
-    print("[STT Worker] whisper.cpp STT 워커 대기 중...")
+    print("[STT Worker] sherpa-onnx STT 워커 대기 중...")
 
     while True:
         task_data = await stt_task_queue.get()
@@ -262,10 +265,11 @@ async def stt_worker():
             if stt_future and not stt_future.done():
                 stt_future.set_result(result.text)
             print(f"[STT Worker] STT 완료: {result.text[:80]}")
-        except WhisperCppError as e:
+        except SherpaSttError as e:
+            message = NO_SPEECH_MESSAGE if e.code == "EMPTY_TRANSCRIPT" else STT_FAILURE_MESSAGE
             if stt_future and not stt_future.done():
-                stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))
-            print(f"[STT Worker] whisper.cpp STT 실패({e.code}): {e}")
+                stt_future.set_exception(SpeechRecognitionError(message))
+            print(f"[STT Worker] sherpa-onnx STT 실패({e.code}): {e}")
         except Exception as e:
             if stt_future and not stt_future.done():
                 stt_future.set_exception(SpeechRecognitionError(STT_FAILURE_MESSAGE))
@@ -389,12 +393,25 @@ async def handle_client(websocket, path="/"):
             async_tasks = set()
             async for message in websocket:
                 data = json.loads(message)
+                command = data.get("command")
                 
                 # 1. 로컬 하드웨어 제어 명령
-                if data.get("command") == "force_record":
-                    if not recorder.is_recording:
+                if command in ("force_record", "start_record", "stop_record"):
+                    if command in ("force_record", "start_record") and not recorder.is_recording:
                         recorder.start_recording()
                         await websocket.send(json.dumps({"status": "listening"}))
+                    elif command == "start_record" and recorder.is_recording:
+                        await websocket.send(json.dumps({
+                            "type": "recording_status",
+                            "status": "listening",
+                            "message": "이미 녹음 중입니다."
+                        }))
+                    elif command == "stop_record" and not recorder.is_recording:
+                        await websocket.send(json.dumps({
+                            "type": "recording_status",
+                            "status": "idle",
+                            "message": "녹음 중이 아닙니다."
+                        }))
                     else:
                         unique_id = uuid.uuid4().hex[:8]
                         wav_file_path = f"audio_{unique_id}.wav"
@@ -449,12 +466,13 @@ async def handle_client(websocket, path="/"):
                                 
                             except SpeechRecognitionError as e:
                                 print(f"[Edge STT 오류]: {e}")
+                                error_message = str(e) or STT_FAILURE_MESSAGE
                                 await websocket.send(json.dumps({
                                     "type": "stt_status",
                                     "status": "failed",
-                                    "message": "음성을 텍스트로 정리하지 못했습니다."
+                                    "message": error_message
                                 }))
-                                await websocket.send(json.dumps({"status": "error", "message": STT_FAILURE_MESSAGE}))
+                                await websocket.send(json.dumps({"status": "error", "message": error_message}))
                             except Exception as e:
                                 print(f"[Edge 프로세스 에러]: {e}")
                                 await websocket.send(json.dumps({"status": "error", "message": "분석 중 오류 발생"}))

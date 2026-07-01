@@ -10,6 +10,7 @@ services:
 
     volumes:
       - ./agent:/app
+      - ./models:/models:ro
       - ./data/local_db:/app/local_memory_db # 컨테이너가 재시작되어도 기억 데이터가 날아가지 않도록 호스트와 연결
 
     # [중요] 라즈베리 파이의 오디오(마이크) 장치 권한을 도커 내부로 연결
@@ -23,6 +24,7 @@ services:
       - .env
 
     environment:
+      - SHERPA_MODEL_DIR=/models/sherpa-onnx-zipformer-korean-2024-06-24
       - CHROMA_DB_PATH=/app/local_memory_db #  database.py에서 참조할 로컬 DB 저장 경로 강제 지정
 
     # (라즈베리 파이 5 리소스 격리 및 최적화)

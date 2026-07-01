@@ -1,12 +1,13 @@
 import React from 'react';
 
-type AgentState = 'idle' | 'listening' | 'processing' | 'speaking';
+type AgentState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
 interface AiPageProps {
   aiText: string;
   agentState: AgentState;
   getStatusText: () => string;
   onStop: () => void;
+  isStopDisabled?: boolean;
 }
 
 const AiPage: React.FC<AiPageProps> = ({
@@ -14,6 +15,7 @@ const AiPage: React.FC<AiPageProps> = ({
   agentState,
   getStatusText,
   onStop,
+  isStopDisabled = false,
 }) => {
   return (
     <div className="home-card ai-card">
@@ -43,7 +45,7 @@ const AiPage: React.FC<AiPageProps> = ({
 
       <p className="listening-text">{getStatusText()}</p>
 
-      <button className="stop-btn" onClick={onStop}>
+      <button className="stop-btn" onClick={onStop} disabled={isStopDisabled}>
         ■ 그만하기
       </button>
     </div>
