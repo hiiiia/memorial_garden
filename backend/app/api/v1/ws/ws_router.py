@@ -3,7 +3,10 @@ import json
 from db.database import SessionLocal 
 from db.models import GuardianDependentMapping, Log, DeviceSetting
 from api.v1.ws.websocket_manager import device_ws_manager
+from api.v1.utils.notifier import send_kakao_diary_alert, send_slack_diary_alert
 from api.v1.deps import verify_hw_jwt_token
+from asyncio import create_task
+
 ws_router = APIRouter()
 
 @ws_router.websocket("/device/{dependent_id}")
@@ -147,6 +150,85 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
                 finally:
                     update_db.close()
             
+            elif action in ["SEND_DIARY"]:
+                guardian_mapping_ids = payload.get("data", {}).get("guardian_mapping_ids") or payload.get("guardian_mapping_ids")
+                diary_id = payload.get("data", {}).get("diary_id") or payload.get("diary_id")
+                
+                if not guardian_mapping_ids or not diary_id:
+                    print("⚠️ [SEND_DIARY] 필수 데이터 누락 (guardian_mapping_ids 또는 diary_id)")
+                    continue
+                
+                # DB 세션 열기
+                update_db = SessionLocal()
+                try:
+                    # 1. logs 테이블에서 해당 일기 정보 조회 (모델 이름이 Log라고 가정)
+                    log_data = update_db.query(Log).filter(Log.id == diary_id).first()
+                    
+                    if not log_data:
+                        print(f"⚠️ [SEND_DIARY] 해당 일기를 찾을 수 없습니다. (diary_id: {diary_id})")
+                        continue
+                        
+                    # 일기 정보 추출
+                    diary_text = log_data.diary_text if hasattr(log_data, 'diary_text') else "내용 없음"
+                    llm_summary = log_data.llm_summary if hasattr(log_data, 'llm_summary') else "상태 정보 없음"
+                    emotion = log_data.primary_emotion if hasattr(log_data, 'primary_emotion') else "neutral"
+                    image_url = log_data.image_url if hasattr(log_data, 'image_url') else ""
+                    
+                    # 2. 보호자 매핑 ID 리스트를 순회하며 알림 발송
+                    for mapping_id in guardian_mapping_ids:
+                        mapping = update_db.query(GuardianDependentMapping).filter(
+                            GuardianDependentMapping.id == mapping_id,
+                            GuardianDependentMapping.status == "CONNECTED"  # 연결된 상태인지 확인
+                        ).first()
+                        
+                        if mapping and mapping.guardian:
+                            guardian_obj = mapping.guardian
+                            target_name = mapping.dependent.name if hasattr(mapping, 'dependent') and mapping.dependent else "어르신"
+                            
+                            print(f"💌 [SEND_DIARY] {guardian_obj.name} 보호자에게 일기 알림 발송 예약.")
+                            
+                            # 🌟 알림톡 발송 (FastAPI 라우터 내부라면 background_tasks 사용, 
+                            # 웹소켓 핸들러 내부라면 asyncio.create_task 사용 권장)
+                            # 아래는 위험 감지 예시를 참조한 함수 호출입니다.
+                            
+                            # 예: 카카오 알림톡 발송을 백그라운드로 넘기기
+                            # asyncio.create_task(send_kakao_diary_alert(...)) 또는 background_tasks.add_task(...)
+                            # 함수 정의에 맞춰 인자를 전달해 줍니다.
+                            # 카카오 알림톡 발송을 백그라운드로 넘기기 (웹소켓 환경)
+                            create_task(
+                                send_kakao_diary_alert(
+                                    guardian=guardian_obj,
+                                    dependent_name=target_name,
+                                    diary_text=diary_text,
+                                    summary=llm_summary,
+                                    emotion=emotion,
+                                    image_url=image_url,
+                                    db=update_db  # 함수 정의에 db가 있다면 포함
+                                )
+                            )
+                            
+                            # 슬랙 알림도 함께
+                            create_task(
+                                send_slack_diary_alert(
+                                    guardian_name=guardian_obj.name,
+                                    dependent_name=target_name,
+                                    diary_text=diary_text,
+                                    summary=llm_summary,
+                                    emotion=emotion,
+                                    image_url=image_url
+                                )
+                            )
+                        else:
+                            print(f"⚠️ [SEND_DIARY] 매핑 정보를 찾을 수 없거나 연결되지 않았습니다. (mapping_id: {mapping_id})")
+                            
+                except Exception as e:
+                    update_db.rollback()
+                    print(f"🚨 [SEND_DIARY] 일기 전송 처리 중 DB 오류 발생: {e}")
+                finally:
+                    # 세션 안전하게 닫기
+                    update_db.close()
+                
+                
                 
     except WebSocketDisconnect:
         # 연결이 끊어졌을 때 매니저에서 제거
