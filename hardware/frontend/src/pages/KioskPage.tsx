@@ -438,27 +438,57 @@ const KioskPage: React.FC = () => {
       )}
 
       {screen === 'send' && (
-  <SendPage
-    guardians={guardians}
-    onSend={(guardianIds) => {
-      console.log('선택된 보호자 mappingId:', guardianIds);
-      console.log('보낼 일기:', selectedDiary);
+      <SendPage
+        guardians={guardians}
+        onSend={(guardianIds) => {
+          console.log('선택된 보호자 mappingId:', guardianIds);
+          console.log('보낼 일기:', selectedDiary);
 
-      setScreen('finish');
-    }}
-    onStop={() => setScreen('home')}
-  />
-)}
+          if (!selectedDiary) {
+            alert('보낼 일기가 없습니다.');
+            return;
+          }
 
-{screen === 'finish' && (
-  <FinishPage onConfirm={() => setScreen('home')} />
-)}
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                target: 'cloud',
+                payload: {
+                  action: 'SEND_DIARY',
+                  data: {
+                    guardian_mapping_ids: guardianIds,
+                    diary_id: selectedDiary.id,
+                  },
+                },
+              })
+            );
+
+            setScreen('finish');
+          } else {
+            alert('기기 연결이 끊어졌습니다. 잠시 후 다시 시도해주세요.');
+          }
+        }}
+        onStop={() => setScreen('home')}
+      />
+    )}
+
+    {screen === 'finish' && (
+      <FinishPage onConfirm={() => setScreen('home')} />
+    )}
 
       {screen === 'diary' && (
         <DiaryPage
           todayFormatted={todayFormatted}
           todayDiary={todayDiary}
-          onNext={() => setScreen('send')}
+          onNext={() => {
+          if (!todayDiary) {
+            alert('오늘의 일기가 없습니다.');
+            return;
+          }
+
+          setSelectedDiary(todayDiary);
+          setScreen('send');
+        }}
         />
       )}
 
