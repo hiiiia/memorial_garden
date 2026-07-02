@@ -5,10 +5,11 @@ import json
 
 from core.config import settings
 from db.models import Guardian
-from db.database import get_db
+from db.database import get_db, SessionLocal
 
 from api.v1.utils.security import decrypt_token # 복호화 함수
 from api.v1.auth.auth import refresh_kakao_token_procedure
+
 
 SLACK_CHANNEL= settings.SLACK_CHANNEL
 SLACK_TOKEN = settings.SLACK_TOKEN
@@ -213,66 +214,71 @@ async def send_kakao_alert(guardian, dependent_name: str, risk_score: float, sum
             print(f"[Kakao Alert Exception] 서버 통신 에러: {e}")
             
 
-async def send_kakao_diary_alert(guardian, dependent_name: str, diary_text: str, summary: str, emotion: str, image_url: str, db):
+async def send_kakao_diary_alert(guardian_id: int, dependent_name: str, diary_text: str, summary: str, emotion: str, image_url: str):
     """
     새로운 그림일기가 생성되었을 때 보호자의 카카오톡(나에게 보내기)으로 알림을 전송합니다.
-    토큰 만료(-401) 에러가 발생하면 자동으로 리프레시 토큰을 이용해 갱신 후 1회 재시도합니다.
+    백그라운드 전용 독립 세션을 사용하여 DB 커넥션 누수를 방지합니다.
     """
-    # 1. 토큰 존재 여부 확인
-    if not guardian.kakao_access_token:
-        print(f"[Kakao Warning] {guardian.name} 보호자는 카카오톡 연동이 되어있지 않습니다.")
-        return
-
-    # 2. DB에 저장된 암호화된 토큰을 원본으로 복호화
-    try:
-        access_token = decrypt_token(guardian.kakao_access_token)
-    except Exception as e:
-        print(f"[Kakao Diary Error] 토큰 복호화 실패: {e}")
-        return
-
-    # 3. 카카오 '나에게 보내기' API 주소 및 헤더 설정
-    url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/x-www-form-urlencoded" 
-    }
-
-    # 4. 카카오톡 feed 템플릿 구성 (이미지를 예쁘게 띄우기 위함)
-    # 카카오톡 설명(description)란은 글자 수 제한이 있으므로 일기 내용은 적절히 자르는 것이 좋습니다.
-    short_diary = diary_text if len(diary_text) <= 40 else diary_text[:40] + "..."
     
-    template_object = {
-        "object_type": "feed",
-        "content": {
-            "title": f"🌱 {dependent_name} 어르신의 새로운 기억이 피어났습니다.",
-            "description": f"📝 이야기: \"{short_diary}\"\n💡 요약: {summary}\n(주요 감정: {emotion})",
-            "image_url": image_url,  # 생성된 그림일기 이미지 URL
-            "image_width": 800,
-            "image_height": 800,
-            "link": {
-                "web_url": f"{settings.FRONTEND_URL}",
-                "mobile_web_url": f"{settings.FRONTEND_URL}"
-            }
-        },
-        "buttons": [
-            {
-                "title": "일기장 전체 보기",
+    # 1. 백그라운드 전용 독립 DB 세션 생성
+    bg_db = SessionLocal()
+    try:
+        # 2. 전달받은 ID로 보호자 정보 안전하게 조회
+        guardian = bg_db.query(Guardian).filter(Guardian.id == guardian_id).first()
+        
+        # 토큰 존재 여부 확인
+        if not guardian or not guardian.kakao_access_token:
+            guardian_name = guardian.name if guardian else "알 수 없는 보호자"
+            print(f"[Kakao Warning] {guardian_name} 보호자는 카카오톡 연동이 되어있지 않거나 찾을 수 없습니다.")
+            return
+
+        # 3. DB에 저장된 암호화된 토큰을 원본으로 복호화
+        try:
+            access_token = decrypt_token(guardian.kakao_access_token)
+        except Exception as e:
+            print(f"[Kakao Diary Error] 토큰 복호화 실패: {e}")
+            return
+
+        # 4. 카카오 '나에게 보내기' API 주소 및 헤더 설정
+        url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/x-www-form-urlencoded" 
+        }
+
+        # 5. 카카오톡 feed 템플릿 구성 (이미지를 예쁘게 띄우기 위함)
+        short_diary = diary_text if len(diary_text) <= 40 else diary_text[:40] + "..."
+        
+        template_object = {
+            "object_type": "feed",
+            "content": {
+                "title": f"🌱 {dependent_name} 어르신의 새로운 기억이 피어났습니다.",
+                "description": f"📝 이야기: \"{short_diary}\"\n💡 요약: {summary}\n(주요 감정: {emotion})",
+                "image_url": image_url,  # 생성된 그림일기 이미지 URL
+                "image_width": 800,
+                "image_height": 800,
                 "link": {
                     "web_url": f"{settings.FRONTEND_URL}",
                     "mobile_web_url": f"{settings.FRONTEND_URL}"
                 }
-            }
-        ]
-    }
+            },
+            "buttons": [
+                {
+                    "title": "일기장 전체 보기",
+                    "link": {
+                        "web_url": f"{settings.FRONTEND_URL}",
+                        "mobile_web_url": f"{settings.FRONTEND_URL}"
+                    }
+                }
+            ]
+        }
 
-    # API 스펙에 맞게 json 텍스트로 변환
-    data = {
-        "template_object": json.dumps(template_object, ensure_ascii=False)
-    }
+        data = {
+            "template_object": json.dumps(template_object, ensure_ascii=False)
+        }
 
-    # 5. 전송 실행 및 Retry 파이프라인 (기존 로직과 동일)
-    async with httpx.AsyncClient() as client:
-        try:
+        # 6. 전송 실행 및 Retry 파이프라인
+        async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, data=data, timeout=10.0)
             res_data = response.json()
             
@@ -280,7 +286,8 @@ async def send_kakao_diary_alert(guardian, dependent_name: str, diary_text: str,
             if response.status_code == 401 or res_data.get("code") == -401:
                 print(f"🔄 [Kakao Diary] 토큰 만료 감지(-401). {guardian.name}님의 토큰 갱신을 시도합니다.")
                 
-                new_access_token = await refresh_kakao_token_procedure(guardian.id, db)
+                # 3. 리프레시 토큰 갱신 함수에도 전용 세션(bg_db)을 전달!
+                new_access_token = await refresh_kakao_token_procedure(guardian.id, bg_db)
                 
                 if new_access_token:
                     headers["Authorization"] = f"Bearer {new_access_token}"
@@ -303,6 +310,11 @@ async def send_kakao_diary_alert(guardian, dependent_name: str, diary_text: str,
             # 토큰 만료가 아닌 다른 카카오 API 에러 시
             else:
                 print(f"[Kakao Diary Error] 발송 실패: {res_data}")
-                
-        except Exception as e:
-            print(f"[Kakao Diary Exception] 서버 통신 에러: {e}")
+
+    except Exception as e:
+        print(f"🚨 [Kakao Diary Exception] 백그라운드 처리 중 에러 발생: {e}")
+        
+    finally:
+        # 4. 작업이 끝나면 반드시 백그라운드 전용 세션을 닫음 (핵심)
+        bg_db.close()
+

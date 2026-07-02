@@ -30,7 +30,7 @@ client = AsyncOpenAI(
     api_key="ollama"
 )
 LLM_MODEL = "gemma4:12b"           # 무거운 심층 분석용
-LIGHT_LLM_MODEL = "qwen2.5:3b"     # 엣지 실시간 라우팅용
+LIGHT_LLM_MODEL = "qwen2.5:7b"     # 엣지 실시간 라우팅용
 
 # ==========================================
 # 2. 데이터 스키마

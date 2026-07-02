@@ -4,6 +4,7 @@ import json
 import aiohttp
 import uuid
 import os
+import shutil
 from config import settings
 from database import db_manager 
 from i2s_audio import I2SPlayer, I2SRecorder
@@ -43,6 +44,8 @@ AUDIO_ACTION_DIR = os.getenv("AUDIO_ACTION_DIR", os.path.join(BASE_DIR, "audio")
 
 BACKEND_URL = settings.BACKEND_URL
 DEVICE_TOKEN = None
+
+debug_mode = True
 
 class InitData:
     init_data = {}
@@ -191,53 +194,104 @@ async def recognize_speech_from_mic(wav_path: str):
         raise SpeechRecognitionError(STT_FAILURE_MESSAGE)
     return stt_text
 
-# ==========================================
+ # ==========================================
+#  가상 오디오 재생 제어
+# ==========================================   
+class MockI2SPlayer:
+    """개발 환경용 가상 스피커 클래스"""
+    def play(self, action_file, audio_dir):
+        print(f"🎧 [Dev Audio] 가상 스피커 재생 완료 시뮬레이션 (파일: {action_file})")
+ # ==========================================
 #  [로컬] 오디오 재생 제어
-# ==========================================
+# ==========================================     
 async def play_local_action(action_file: str):
     if not action_file: return
     if recorder.is_recording:
         print("[Local Audio] 녹음 중이므로 재생을 생략합니다.")
         return
     try:
+        # 1. 실제 하드웨어(I2S 스피커) 재생 시도
         await asyncio.to_thread(player.play, action_file, AUDIO_ACTION_DIR)
     except Exception as e:
-        print(f"[Local Audio] I2S 재생 실패: {e}")
+        # 2. 하드웨어가 없는 개발(PC) 환경일 경우 가상 재생으로 우회
+        print(f"⚠️ [Local Audio] 실제 스피커를 찾을 수 없어 가상 재생으로 대체합니다: {e}")
+        mock_player = MockI2SPlayer()
+        await asyncio.to_thread(mock_player.play, action_file, AUDIO_ACTION_DIR)
 
 # ==========================================
-# I2S 오디오 녹음 제어 (AudioRecorder)
+# [통합] I2S 오디오 녹음 제어 (자동 Fallback)
 # ==========================================
 class AudioRecorder:
     def __init__(self):
         self.is_recording = False
         self.temp_path = None
-        self.recorder = I2SRecorder()
+        self.use_mock = False # 가상(Dev) 모드 플래그
+        
+        try:
+            self.recorder = I2SRecorder()
+        except Exception as e:
+            print(f"⚠️ [AudioRecorder] 하드웨어 마이크 초기화 실패, 가상 모드로 전환합니다: {e}")
+            self.recorder = None
+            self.use_mock = True
 
     def start_recording(self):
         os.makedirs(BASE_DIR, exist_ok=True)
         self.temp_path = os.path.join(BASE_DIR, f"recording_{uuid.uuid4().hex[:8]}.wav")
-        self.recorder.start(self.temp_path)
+        
+        if not self.use_mock:
+            try:
+                self.recorder.start(self.temp_path)
+                print("[Edge] I2S 하드웨어 녹음 시작됨...")
+            except Exception as e:
+                print(f"⚠️ [Dev Edge] 녹음 시작 중 에러 발생, 가상 모드로 전환합니다: {e}")
+                self.use_mock = True
+                
+        if self.use_mock:
+            print("[Dev Edge] 가상 녹음 시작됨 (테스트 모드)...")
+            
         self.is_recording = True
-        print("[Edge] I2S 녹음 시작됨...")
 
     def stop_recording(self, wav_name):
         self.is_recording = False
         full_path = os.path.join(BASE_DIR, wav_name)
-        try:
-            temp_path = self.recorder.stop()
-            os.replace(temp_path, full_path)
-            if not os.path.exists(full_path) or os.path.getsize(full_path) <= 44:
-                print(f"[Edge] 녹음 WAV 검증 실패: {full_path}")
+        
+        # 1. 개발(가상) 모드일 때의 동작
+        if self.use_mock:
+            # 주의: 도커 환경 내부라면 C드라이브 경로가 아니라 컨테이너 내부 경로(예: /app/data/test_1.mp3)를 써야 할 수 있습니다.
+            test_source_path = "data/test_1.mp3"
+            
+            try:
+                if not os.path.exists(test_source_path):
+                    print(f"⚠️ [Dev Edge] 테스트 원본 파일을 찾을 수 없습니다: {test_source_path}")
+                    return False, None
+                    
+                shutil.copy(test_source_path, full_path)
+                print(f"✅ [Dev Edge] 가상 녹음 종료 및 테스트 파일 복사 완료: {full_path}")
+                return True, full_path
+            except Exception as e:
+                print(f"🚨 [Dev Edge] 테스트 파일 처리 중 오류 발생: {e}")
                 return False, None
-            print(f"[Edge] I2S 녹음 종료 및 저장 완료: {full_path}")
-            return True, full_path
-        except Exception as e:
-            print(f"[Edge] I2S 녹음 종료 실패: {e}")
-            return False, None
+                
+        # 2. 실제 하드웨어 모드일 때의 동작
+        else:
+            try:
+                temp_path = self.recorder.stop()
+                os.replace(temp_path, full_path)
+                
+                if not os.path.exists(full_path) or os.path.getsize(full_path) <= 44:
+                    print(f"[Edge] 녹음 WAV 검증 실패: {full_path}")
+                    return False, None
+                    
+                print(f"[Edge] I2S 녹음 종료 및 저장 완료: {full_path}")
+                return True, full_path
+            except Exception as e:
+                print(f"[Edge] I2S 녹음 종료 실패: {e}")
+                return False, None
 
     def callback(self, indata, frames, time, status):
         pass
-
+    
+  
 # 전역 객체 생성
 recorder = AudioRecorder()
 player = I2SPlayer()
@@ -253,13 +307,23 @@ stt_task_queue = asyncio.Queue()
 # [로컬] Sherpa-ONNX STT 워커 (단일 실행)
 # ==========================================
 async def stt_worker():
-    print("[STT Worker] sherpa-onnx STT 워커 대기 중...")
-
+    print("🧠 [STT Worker] 시작됨.")
+    
     while True:
         task_data = await stt_task_queue.get()
         wav_path = task_data.get("wav_path")
         stt_future = task_data.get("stt_future")
 
+        # 개발 환경(윈도우)인 경우 하드웨어 엔진 호출을 무시하고 가짜 결과 반환
+        if debug_mode == True:
+            print(f"💻 [Dev STT Worker] 윈도우 환경 감지. STT 라이브러리 호출을 생략합니다.")
+            if stt_future and not stt_future.done():
+                # 윈도우 테스트용 가짜 응답
+                stt_future.set_result("오늘 날씨가 너무 좋아서 동네 뒷산에 산책을 다녀왔어.옛날에 우리 영수 어릴때 같이 손잡고 올라가던 기억이 나서, 기분이 참 좋더라구")
+            stt_task_queue.task_done()
+            continue
+
+        # 리눅스(라즈베리파이) 환경인 경우에만 실제 엔진 가동
         try:
             result = await asyncio.to_thread(stt_transcriber.transcribe, wav_path)
             if stt_future and not stt_future.done():
@@ -358,7 +422,7 @@ async def get_response_from_ai_server(session, raw_text: str, memory_context: st
     }
     
     try:
-        async with session.post(url, json=payload, headers=headers, timeout=5.0) as resp:
+        async with session.post(url, json=payload, headers=headers, timeout=10.0) as resp:
             if resp.status == 200:
                 return await resp.json()
             else:

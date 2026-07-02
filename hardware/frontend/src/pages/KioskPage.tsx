@@ -180,7 +180,10 @@ const KioskPage: React.FC = () => {
     }
   };
 
-
+  // 
+  useEffect(() => {
+    setRecordCommandPending(false);
+  }, [agentState]);
 
   // 🔌 웹소켓 연결 및 하드웨어 신호 수신 로직
   useEffect(() => {
@@ -318,17 +321,17 @@ const KioskPage: React.FC = () => {
 
   // 🎤 '말하기' 버튼 클릭 시 실행되는 함수
   const handleStartTalk = () => {
-    if (recordCommandPending || agentState === 'listening') return;
+    //if (recordCommandPending || agentState === 'listening') return;
     setScreen('ai'); // AI 화면으로 넘기기
-
+    setRecordCommandPending(false);
     // 수정됨: wsConnected 대신 실제 웹소켓의 연결 상태(readyState)를 확인합니다.
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      // 파이썬 쪽으로 강제 녹음 시작 명령 전송
-      setRecordCommandPending(true);
-      wsRef.current.send(JSON.stringify({ command: 'force_record' }));
-    } else {
-      console.warn('⏳ 웹소켓 연결을 기다리는 중입니다. 잠시 후 다시 눌러주세요.');
-    }
+    // if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    //   // 파이썬 쪽으로 강제 녹음 시작 명령 전송
+    //   setRecordCommandPending(true);
+    //   wsRef.current.send(JSON.stringify({ command: 'force_record' }));
+    // } else {
+    //   console.warn('⏳ 웹소켓 연결을 기다리는 중입니다. 잠시 후 다시 눌러주세요.');
+    // }
   };
 
   const handleAcceptPairing = () => {
@@ -447,22 +450,38 @@ const KioskPage: React.FC = () => {
 
       {screen === 'ai' && (
         <AiPage
-          aiText={aiText}
-          agentState={agentState}
-          getStatusText={getStatusText}
-          onStop={() => {
-            if (recordCommandPending || agentState !== 'listening') return;
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        aiText={aiText}
+        agentState={agentState}
+        getStatusText={getStatusText}
+        
+        onStart={() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
               setRecordCommandPending(true);
-              wsRef.current.send(
-                JSON.stringify({ command: 'stop_record' })
-              );
-            } else {
-              setRecordCommandPending(false);
+              setAiText('듣는 중 이에요'); // 새 대화 시작 시 화면 초기화
+              wsRef.current.send(JSON.stringify({ command: 'start_record' }));
             }
           }}
-          isStopDisabled={recordCommandPending || agentState !== 'listening'}
-        />
+          
+          // 2. 보내기
+          onSend={() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              setRecordCommandPending(true);
+              setAiText('생각 중 이에요');
+              wsRef.current.send(JSON.stringify({ command: 'stop_record' }));
+            }
+          }}
+          
+          // 3. 대화종료
+          onEnd={() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              setRecordCommandPending(false);
+              setAiText('안녕하세요 어르신 오늘은 어떤 하루를 보내셨나요?'); // 화면 초기화
+              setScreen('home');
+            }
+          }}
+
+        isStopDisabled={recordCommandPending || !['listening', 'idle', 'processing'].includes(agentState)}
+      />
       )}
 
       {screen === 'send' && (
