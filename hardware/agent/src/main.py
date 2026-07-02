@@ -255,7 +255,7 @@ class AudioRecorder:
         self.is_recording = False
         full_path = os.path.join(BASE_DIR, wav_name)
         
-        # 🌟 1. 개발(가상) 모드일 때의 동작
+        # 1. 개발(가상) 모드일 때의 동작
         if self.use_mock:
             # 주의: 도커 환경 내부라면 C드라이브 경로가 아니라 컨테이너 내부 경로(예: /app/data/test_1.mp3)를 써야 할 수 있습니다.
             test_source_path = "data/test_1.mp3"
@@ -272,7 +272,7 @@ class AudioRecorder:
                 print(f"🚨 [Dev Edge] 테스트 파일 처리 중 오류 발생: {e}")
                 return False, None
                 
-        # 🌟 2. 실제 하드웨어 모드일 때의 동작
+        # 2. 실제 하드웨어 모드일 때의 동작
         else:
             try:
                 temp_path = self.recorder.stop()
@@ -422,7 +422,7 @@ async def get_response_from_ai_server(session, raw_text: str, memory_context: st
     }
     
     try:
-        async with session.post(url, json=payload, headers=headers, timeout=5.0) as resp:
+        async with session.post(url, json=payload, headers=headers, timeout=10.0) as resp:
             if resp.status == 200:
                 return await resp.json()
             else:
