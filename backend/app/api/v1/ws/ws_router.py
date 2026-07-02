@@ -197,13 +197,12 @@ async def websocket_endpoint(websocket: WebSocket, dependent_id: str):
                             # 카카오 알림톡 발송을 백그라운드로 넘기기 (웹소켓 환경)
                             create_task(
                                 send_kakao_diary_alert(
-                                    guardian=guardian_obj,
+                                    guardian_id=guardian_obj.id,  # 고유 ID만 전달
                                     dependent_name=target_name,
                                     diary_text=diary_text,
                                     summary=llm_summary,
                                     emotion=emotion,
-                                    image_url=image_url,
-                                    db=update_db  # 함수 정의에 db가 있다면 포함
+                                    image_url=image_url
                                 )
                             )
                             
